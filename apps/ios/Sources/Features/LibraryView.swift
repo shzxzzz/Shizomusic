@@ -1,431 +1,258 @@
 import SwiftUI
 
 struct LibraryView: View {
-    @State private var selectedTab = AppTab.library
     @State private var isPlaying = true
-    @State private var isPlayerPresented = false
+    @State private var isFavorite = false
+    @State private var isShuffleEnabled = false
+    @State private var progress = 0.41
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            LibraryHomeView(
-                isPlaying: $isPlaying,
-                openSearch: { selectedTab = .search }
-            )
-            .tag(AppTab.library)
-            .tabItem { Label("tab.library", systemImage: "square.stack.fill") }
+        GeometryReader { geometry in
+            let horizontalPadding: CGFloat = 28
+            let availableWidth = geometry.size.width - horizontalPadding * 2
+            let artworkSize = min(availableWidth, geometry.size.height * 0.44)
 
-            SearchView()
-                .tag(AppTab.search)
-                .tabItem { Label("tab.search", systemImage: "magnifyingglass") }
+            ZStack {
+                PlayerBackground()
 
-            PlaceholderTabView(
-                title: "friends.title",
-                subtitle: "friends.subtitle",
-                systemImage: "person.2.wave.2.fill"
-            )
-            .tag(AppTab.friends)
-            .tabItem { Label("tab.friends", systemImage: "person.2.fill") }
+                VStack(alignment: .leading, spacing: 0) {
+                    playerHeader
 
-            PlaceholderTabView(
-                title: "stats.title",
-                subtitle: "stats.subtitle",
-                systemImage: "chart.bar.xaxis"
-            )
-            .tag(AppTab.statistics)
-            .tabItem { Label("tab.statistics", systemImage: "chart.bar.fill") }
-        }
-        .tint(ShizoPalette.accent)
-        .toolbarBackground(ShizoPalette.backgroundElevated, for: .tabBar)
-        .toolbarBackground(.visible, for: .tabBar)
-        .toolbarColorScheme(.dark, for: .tabBar)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            MiniPlayerView(
-                isPlaying: $isPlaying,
-                openPlayer: { isPlayerPresented = true }
-            )
-        }
-        .sheet(isPresented: $isPlayerPresented) {
-            NowPlayingView(isPlaying: $isPlaying)
-                .presentationDragIndicator(.visible)
-                .presentationBackground(ShizoPalette.background)
+                    Spacer(minLength: 18)
+
+                    albumArtwork(size: artworkSize)
+                        .frame(maxWidth: .infinity)
+
+                    Spacer(minLength: 22)
+
+                    trackDetails
+
+                    Spacer(minLength: 18)
+
+                    progressSection
+
+                    Spacer(minLength: 20)
+
+                    controls
+                }
+                .padding(.horizontal, horizontalPadding)
+                .padding(.top, 18)
+                .padding(.bottom, 12)
+            }
         }
         .preferredColorScheme(.dark)
     }
-}
 
-private enum AppTab: Hashable {
-    case library
-    case search
-    case friends
-    case statistics
-}
-
-private struct LibraryHomeView: View {
-    @Binding var isPlaying: Bool
-    let openSearch: () -> Void
-
-    private let quickAccess = QuickAccessItem.samples
-    private let recentTracks = RecentTrack.samples
-
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                ShizoPalette.background.ignoresSafeArea()
-
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(alignment: .leading, spacing: 28) {
-                        header
-                        searchButton
-                        ContinueListeningCard(isPlaying: $isPlaying)
-                        quickAccessSection
-                        recentSection
-                        offlineBanner
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
-                    .padding(.bottom, 28)
-                }
-            }
-            .toolbar(.hidden, for: .navigationBar)
-        }
-    }
-
-    private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("home.greeting")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(ShizoPalette.textSecondary)
-
-                Text("app.name")
-                    .font(.system(size: 31, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-            }
-
-            Spacer()
-
-            HStack(spacing: 7) {
-                Circle()
-                    .fill(ShizoPalette.success)
-                    .frame(width: 7, height: 7)
-
-                Text("home.offline_ready")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(ShizoPalette.textSecondary)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(ShizoPalette.surface, in: Capsule())
-            .overlay { Capsule().stroke(ShizoPalette.stroke, lineWidth: 1) }
-        }
-    }
-
-    private var searchButton: some View {
-        Button(action: openSearch) {
-            HStack(spacing: 11) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 16, weight: .semibold))
-                Text("home.search_prompt")
-                    .font(.subheadline)
-                Spacer()
-                Image(systemName: "waveform")
-                    .font(.system(size: 15, weight: .semibold))
-            }
-            .foregroundStyle(ShizoPalette.textSecondary)
-            .padding(.horizontal, 16)
-            .frame(height: 48)
-            .background(ShizoPalette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(ShizoPalette.stroke, lineWidth: 1)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("home.search_accessibility")
-    }
-
-    private var quickAccessSection: some View {
+    private var playerHeader: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title: "home.quick_access")
+            Text("player.now_playing")
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .tracking(0.7)
+                .foregroundStyle(.white.opacity(0.72))
 
-            LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: 12),
-                    GridItem(.flexible(), spacing: 12)
-                ],
-                spacing: 12
-            ) {
-                ForEach(quickAccess) { item in
-                    QuickAccessCard(item: item)
-                }
-            }
-        }
-    }
+            HStack(spacing: 12) {
+                Button(action: {}) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "list.bullet")
+                            .font(.system(size: 13, weight: .semibold))
 
-    private var recentSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title: "home.recently_added", actionTitle: "common.all")
+                        Text("player.playlist")
+                            .font(.system(size: 17, weight: .semibold, design: .rounded))
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 14) {
-                    ForEach(recentTracks) { track in
-                        RecentTrackCard(track: track)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .bold))
                     }
-                }
-            }
-            .contentMargins(.horizontal, 0, for: .scrollContent)
-        }
-    }
-
-    private var offlineBanner: some View {
-        HStack(spacing: 14) {
-            Image(systemName: "arrow.down.circle.fill")
-                .font(.system(size: 25, weight: .semibold))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(ShizoPalette.accent)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("home.downloads_title")
-                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
-                Text("home.downloads_subtitle")
-                    .font(.caption)
-                    .foregroundStyle(ShizoPalette.textSecondary)
-            }
-
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(ShizoPalette.textTertiary)
-        }
-        .padding(16)
-        .background(ShizoPalette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-    }
-}
-
-private struct ContinueListeningCard: View {
-    @Binding var isPlaying: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                Label("home.continue_listening", systemImage: "waveform")
-                    .font(.caption.weight(.bold))
-                    .textCase(.uppercase)
-                    .foregroundStyle(.white.opacity(0.78))
-
-                Spacer()
-                Text("track.source.local")
-                    .font(.caption2.weight(.bold))
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 6)
-                    .background(.black.opacity(0.18), in: Capsule())
-            }
-
-            HStack(spacing: 17) {
-                ArtworkView(style: .hero)
-                    .frame(width: 112, height: 112)
-
-                VStack(alignment: .leading, spacing: 7) {
-                    Text("Night Drive")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                    Text("Neon Valley")
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.72))
-                        .lineLimit(1)
-
-                    Spacer(minLength: 4)
-
-                    HStack(spacing: 5) {
-                        Image(systemName: "arrow.down.circle.fill")
-                        Text("track.downloaded")
-                    }
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.7))
-                }
-
-                Spacer(minLength: 0)
-
-                Button { isPlaying.toggle() } label: {
-                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(ShizoPalette.ink)
-                        .frame(width: 52, height: 52)
-                        .background(.white, in: Circle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(isPlaying ? Text("player.pause") : Text("player.play"))
-            }
 
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(.white.opacity(0.22))
-                    Capsule()
-                        .fill(.white)
-                        .frame(width: proxy.size.width * 0.46)
-                }
+                Spacer()
+
+                Button("player.queue", action: {})
+                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.82))
+                    .buttonStyle(.plain)
             }
-            .frame(height: 3)
+        }
+    }
+
+    private func albumArtwork(size: CGFloat) -> some View {
+        Image("MistyLake")
+            .resizable()
+            .scaledToFill()
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 30, style: .continuous)
+                    .stroke(.white.opacity(0.38), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.28), radius: 20, y: 12)
+            .accessibilityLabel(Text("player.artwork"))
+    }
+
+    private var trackDetails: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("player.track_title")
+                .font(.system(size: 24, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+
+            Text("player.artist")
+                .font(.system(size: 16, weight: .regular, design: .rounded))
+                .foregroundStyle(.white.opacity(0.67))
+                .lineLimit(1)
+        }
+    }
+
+    private var progressSection: some View {
+        VStack(spacing: 9) {
+            PlayerProgressView(progress: $progress)
+                .frame(height: 18)
 
             HStack {
-                Text("1:42")
+                Text(verbatim: "1:32")
                 Spacer()
-                Text("−2:03")
+                Text(verbatim: "3:48")
             }
-            .font(.caption2.monospacedDigit())
-            .foregroundStyle(.white.opacity(0.64))
+            .font(.system(size: 12, weight: .medium, design: .rounded).monospacedDigit())
+            .foregroundStyle(.white.opacity(0.68))
         }
-        .padding(20)
-        .background {
-            ZStack {
-                LinearGradient(
-                    colors: [Color(red: 0.96, green: 0.28, blue: 0.20), ShizoPalette.accentDeep],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                Circle()
-                    .fill(.white.opacity(0.1))
-                    .frame(width: 230)
-                    .offset(x: 135, y: -95)
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .shadow(color: ShizoPalette.accent.opacity(0.18), radius: 24, y: 12)
     }
-}
 
-private struct QuickAccessCard: View {
-    let item: QuickAccessItem
+    private var controls: some View {
+        HStack(spacing: 0) {
+            PlayerControlButton(
+                systemImage: isFavorite ? "heart.fill" : "heart",
+                accessibilityLabel: "player.favorite",
+                isActive: isFavorite,
+                action: { isFavorite.toggle() }
+            )
 
-    var body: some View {
-        Button(action: {}) {
-            HStack(spacing: 12) {
-                Image(systemName: item.systemImage)
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(item.tint)
-                    .frame(width: 38, height: 38)
-                    .background(item.tint.opacity(0.13), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(item.title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                    Text(item.detail)
-                        .font(.caption2)
-                        .foregroundStyle(ShizoPalette.textSecondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(13)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(ShizoPalette.surface, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 17, style: .continuous)
-                    .stroke(ShizoPalette.stroke, lineWidth: 1)
-            }
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-private struct RecentTrackCard: View {
-    let track: RecentTrack
-
-    var body: some View {
-        Button(action: {}) {
-            VStack(alignment: .leading, spacing: 10) {
-                ArtworkView(style: track.artwork)
-                    .frame(width: 148, height: 148)
-                    .overlay(alignment: .bottomTrailing) {
-                        Image(systemName: "play.fill")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(ShizoPalette.ink)
-                            .frame(width: 34, height: 34)
-                            .background(.white, in: Circle())
-                            .padding(9)
-                            .shadow(color: .black.opacity(0.24), radius: 8, y: 4)
-                    }
-                Text(track.title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                Text(track.artist)
-                    .font(.caption)
-                    .foregroundStyle(ShizoPalette.textSecondary)
-                    .lineLimit(1)
-            }
-            .frame(width: 148, alignment: .leading)
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-private struct SectionHeader: View {
-    let title: LocalizedStringKey
-    var actionTitle: LocalizedStringKey?
-
-    var body: some View {
-        HStack {
-            Text(title)
-                .font(.title3.weight(.bold))
-                .foregroundStyle(.white)
             Spacer()
-            if let actionTitle {
-                Button(actionTitle, action: {})
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(ShizoPalette.accent)
+
+            PlayerControlButton(
+                systemImage: "backward.fill",
+                accessibilityLabel: "player.previous",
+                action: {}
+            )
+
+            Spacer()
+
+            Button {
+                isPlaying.toggle()
+            } label: {
+                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(Color(red: 0.37, green: 0.46, blue: 0.52))
+                    .frame(width: 62, height: 62)
+                    .background(.white, in: Circle())
+                    .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isPlaying ? Text("player.pause") : Text("player.play"))
+
+            Spacer()
+
+            PlayerControlButton(
+                systemImage: "forward.fill",
+                accessibilityLabel: "player.next",
+                action: {}
+            )
+
+            Spacer()
+
+            PlayerControlButton(
+                systemImage: "shuffle",
+                accessibilityLabel: "player.shuffle",
+                isActive: isShuffleEnabled,
+                action: { isShuffleEnabled.toggle() }
+            )
+        }
+        .padding(.horizontal, 18)
+        .frame(height: 84)
+        .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 27, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 27, style: .continuous)
+                .stroke(.white.opacity(0.13), lineWidth: 1)
         }
     }
 }
 
-private struct QuickAccessItem: Identifiable, Sendable {
-    let id = UUID()
-    let titleKey: String
-    let detailKey: String
+private struct PlayerBackground: View {
+    var body: some View {
+        ZStack {
+            Image("MistyLake")
+                .resizable()
+                .scaledToFill()
+                .blur(radius: 55)
+                .scaleEffect(1.24)
+
+            Color(red: 0.39, green: 0.49, blue: 0.56)
+                .opacity(0.72)
+
+            LinearGradient(
+                colors: [.white.opacity(0.10), .clear, .black.opacity(0.08)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+        .ignoresSafeArea()
+    }
+}
+
+private struct PlayerProgressView: View {
+    @Binding var progress: Double
+
+    var body: some View {
+        GeometryReader { geometry in
+            let width = geometry.size.width
+            let clampedProgress = min(max(progress, 0), 1)
+            let thumbOffset = max(0, min(width - 12, width * clampedProgress - 6))
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(.white.opacity(0.24))
+                    .frame(height: 3)
+
+                Capsule()
+                    .fill(.white)
+                    .frame(width: width * clampedProgress, height: 3)
+
+                Circle()
+                    .fill(.white)
+                    .frame(width: 12, height: 12)
+                    .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
+                    .offset(x: thumbOffset)
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        progress = min(max(value.location.x / width, 0), 1)
+                    }
+            )
+        }
+        .accessibilityElement()
+        .accessibilityLabel(Text("player.progress"))
+        .accessibilityValue(Text("\(Int(progress * 100))%"))
+    }
+}
+
+private struct PlayerControlButton: View {
     let systemImage: String
-    let tintStyle: TintStyle
+    let accessibilityLabel: LocalizedStringKey
+    var isActive = false
+    let action: () -> Void
 
-    var title: LocalizedStringKey { LocalizedStringKey(titleKey) }
-    var detail: LocalizedStringKey { LocalizedStringKey(detailKey) }
-
-    var tint: Color {
-        switch tintStyle {
-        case .favorites: .pink
-        case .downloads: ShizoPalette.accent
-        case .playlists: .purple
-        case .importFiles: .cyan
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(isActive ? .white : .white.opacity(0.84))
+                .frame(width: 34, height: 48)
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(accessibilityLabel))
     }
-
-    static let samples = [
-        QuickAccessItem(titleKey: "quick.favorites", detailKey: "quick.favorites_count", systemImage: "heart.fill", tintStyle: .favorites),
-        QuickAccessItem(titleKey: "quick.downloads", detailKey: "quick.downloads_count", systemImage: "arrow.down", tintStyle: .downloads),
-        QuickAccessItem(titleKey: "quick.playlists", detailKey: "quick.playlists_count", systemImage: "music.note.list", tintStyle: .playlists),
-        QuickAccessItem(titleKey: "quick.import", detailKey: "quick.import_detail", systemImage: "plus", tintStyle: .importFiles)
-    ]
-
-    enum TintStyle: Sendable {
-        case favorites
-        case downloads
-        case playlists
-        case importFiles
-    }
-}
-
-private struct RecentTrack: Identifiable, Sendable {
-    let id = UUID()
-    let title: String
-    let artist: String
-    let artwork: ArtworkStyle
-
-    static let samples = [
-        RecentTrack(title: "Falling Up", artist: "Luma", artwork: .violet),
-        RecentTrack(title: "Afterglow", artist: "Stereofield", artwork: .sunset),
-        RecentTrack(title: "Quiet Signals", artist: "Noah Vale", artwork: .ocean)
-    ]
 }
