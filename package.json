@@ -1,0 +1,8 @@
+{
+  "name": "shizomusic",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["apps/server"],
+  "engines": { "node": ">=24 <25" },
+  "scripts": { "test:server": "npm --workspace @shizomusic/server test", "dev:server": "npm --workspace @shizomusic/server run dev" }
+}

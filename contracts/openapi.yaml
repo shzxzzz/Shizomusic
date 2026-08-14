@@ -1,0 +1,41 @@
+openapi: 3.1.0
+info:
+  title: ShizoMusic API
+  version: 0.1.0
+  description: Contract for the private ShizoMusic installation.
+servers:
+  - url: https://shizomusic.example.ts.net
+paths:
+  /health:
+    get:
+      operationId: health
+      responses:
+        '200':
+          description: API process is alive.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Status' }
+  /ready:
+    get:
+      operationId: ready
+      responses:
+        '200':
+          description: API dependencies are ready.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Status' }
+components:
+  schemas:
+    Status:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok, ready] }
+    Error:
+      type: object
+      required: [code, messageKey, requestID]
+      properties:
+        code: { type: string }
+        messageKey: { type: string }
+        requestID: { type: string }
+        details: {}
