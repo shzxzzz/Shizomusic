@@ -383,22 +383,41 @@ private struct SectionHeader: View {
     }
 }
 
-private struct QuickAccessItem: Identifiable {
+private struct QuickAccessItem: Identifiable, Sendable {
     let id = UUID()
-    let title: LocalizedStringKey
-    let detail: LocalizedStringKey
+    let titleKey: String
+    let detailKey: String
     let systemImage: String
-    let tint: Color
+    let tintStyle: TintStyle
+
+    var title: LocalizedStringKey { LocalizedStringKey(titleKey) }
+    var detail: LocalizedStringKey { LocalizedStringKey(detailKey) }
+
+    var tint: Color {
+        switch tintStyle {
+        case .favorites: .pink
+        case .downloads: ShizoPalette.accent
+        case .playlists: .purple
+        case .importFiles: .cyan
+        }
+    }
 
     static let samples = [
-        QuickAccessItem(title: "quick.favorites", detail: "quick.favorites_count", systemImage: "heart.fill", tint: .pink),
-        QuickAccessItem(title: "quick.downloads", detail: "quick.downloads_count", systemImage: "arrow.down", tint: ShizoPalette.accent),
-        QuickAccessItem(title: "quick.playlists", detail: "quick.playlists_count", systemImage: "music.note.list", tint: .purple),
-        QuickAccessItem(title: "quick.import", detail: "quick.import_detail", systemImage: "plus", tint: .cyan)
+        QuickAccessItem(titleKey: "quick.favorites", detailKey: "quick.favorites_count", systemImage: "heart.fill", tintStyle: .favorites),
+        QuickAccessItem(titleKey: "quick.downloads", detailKey: "quick.downloads_count", systemImage: "arrow.down", tintStyle: .downloads),
+        QuickAccessItem(titleKey: "quick.playlists", detailKey: "quick.playlists_count", systemImage: "music.note.list", tintStyle: .playlists),
+        QuickAccessItem(titleKey: "quick.import", detailKey: "quick.import_detail", systemImage: "plus", tintStyle: .importFiles)
     ]
+
+    enum TintStyle: Sendable {
+        case favorites
+        case downloads
+        case playlists
+        case importFiles
+    }
 }
 
-private struct RecentTrack: Identifiable {
+private struct RecentTrack: Identifiable, Sendable {
     let id = UUID()
     let title: String
     let artist: String

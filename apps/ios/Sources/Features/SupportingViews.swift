@@ -43,7 +43,7 @@ struct PlaceholderTabView: View {
     }
 }
 
-enum ArtworkStyle {
+enum ArtworkStyle: Sendable {
     case hero
     case violet
     case sunset
