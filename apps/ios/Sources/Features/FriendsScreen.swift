@@ -32,7 +32,7 @@ struct FriendsScreenPreviewState: Sendable {
 
 struct FriendsScreen: View {
     @State private var state: FriendsScreenPreviewState
-    @State private var path: [FriendProfilePlaceholderDestination] = []
+    @State private var path: [FriendProfileDestination] = []
 
     private let onFriendTapped: (String) -> Void
 
@@ -127,8 +127,8 @@ struct FriendsScreen: View {
                 prompt: Text("friends.search_placeholder")
             )
             .toolbarBackground(.hidden, for: .navigationBar)
-            .navigationDestination(for: FriendProfilePlaceholderDestination.self) { destination in
-                FriendProfilePlaceholderView(destination: destination)
+            .navigationDestination(for: FriendProfileDestination.self) { destination in
+                FriendProfileScreen(destination: destination)
             }
         }
         .preferredColorScheme(.dark)
@@ -136,7 +136,7 @@ struct FriendsScreen: View {
 
     private func openFriend(_ friend: FriendPreviewModel) {
         onFriendTapped(friend.id)
-        path.append(FriendProfilePlaceholderDestination(id: friend.id, displayName: friend.displayName))
+        path.append(FriendProfileDestination(id: friend.id, displayName: friend.displayName))
     }
 }
 
@@ -289,31 +289,9 @@ struct FriendsEmptyState: View {
     }
 }
 
-struct FriendProfilePlaceholderDestination: Hashable, Sendable {
+struct FriendProfileDestination: Hashable, Sendable {
     let id: String
     let displayName: String
-}
-
-struct FriendProfilePlaceholderView: View {
-    let destination: FriendProfilePlaceholderDestination
-
-    var body: some View {
-        ZStack {
-            FriendsBackground()
-
-            VStack(spacing: 10) {
-                Text(verbatim: destination.displayName)
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                Text("friends.profile_later")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(24)
-        }
-        .navigationTitle(destination.displayName)
-        .navigationBarTitleDisplayMode(.inline)
-    }
 }
 
 private struct FriendsBackground: View {

@@ -6,7 +6,7 @@ struct LibraryView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            PlayerScreen()
+            PlayerNavigationRoot()
                 .tag(AppTab.player)
                 .tabItem {
                     Label("tab.player", systemImage: "play.circle.fill")
@@ -41,6 +41,17 @@ struct LibraryView: View {
         .toolbarBackground(.visible, for: .tabBar)
         .preferredColorScheme(.dark)
         .environmentObject(playback)
+    }
+}
+
+private struct PlayerNavigationRoot: View {
+    var body: some View {
+        NavigationStack {
+            PlayerScreen()
+                .navigationDestination(for: CollectionDetailDestination.self) { destination in
+                    CollectionDetailScreen(destination: destination)
+                }
+        }
     }
 }
 
@@ -101,6 +112,7 @@ private struct PlayerScreen: View {
         .sheet(isPresented: $showsQueue) {
             PlaybackQueueScreen()
         }
+        .toolbar(.hidden, for: .navigationBar)
         .preferredColorScheme(.dark)
     }
 
@@ -153,7 +165,7 @@ private struct PlayerScreen: View {
                     .buttonStyle(.plain)
             }
 
-            Button(action: {}) {
+            NavigationLink(value: currentPlaylistDestination) {
                 HStack(spacing: 8) {
                     Image(systemName: "list.bullet")
                         .font(.system(size: 13, weight: .semibold))
@@ -167,6 +179,22 @@ private struct PlayerScreen: View {
                 .foregroundStyle(.white)
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    private var currentPlaylistDestination: CollectionDetailDestination {
+        .playlist(
+            titleKey: "player.playlist",
+            metadataKey: "player.playlist_metadata",
+            artwork: currentPlaylistArtwork
+        )
+    }
+
+    private var currentPlaylistArtwork: CollectionHeroArtwork {
+        switch playback.currentTrack.artworkName {
+        case "MistyLake": .mistyLake
+        case "AuroraShore": .sunset
+        default: .violet
         }
     }
 

@@ -27,7 +27,7 @@ struct MusicLibraryView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 18)
-                    .padding(.bottom, 28)
+                    .padding(.bottom, 120)
                 }
             }
             .navigationDestination(for: CollectionDetailDestination.self) { destination in
@@ -150,15 +150,12 @@ struct MusicLibraryView: View {
                 .font(.system(size: 12, weight: .medium, design: .rounded))
                 .foregroundStyle(.white.opacity(0.48))
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 10) {
-                    ForEach(topArtists) { artist in
-                        NavigationLink(value: artist.detailDestination) {
-                            TopArtistRow(artist: artist)
-                                .frame(width: 230)
-                        }
-                        .buttonStyle(.plain)
+            VStack(spacing: 7) {
+                ForEach(topArtists) { artist in
+                    NavigationLink(value: artist.detailDestination) {
+                        TopArtistRow(artist: artist)
                     }
+                    .buttonStyle(.plain)
                 }
             }
         }
