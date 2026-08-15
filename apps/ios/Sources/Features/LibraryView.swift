@@ -1,6 +1,35 @@
 import SwiftUI
 
 struct LibraryView: View {
+    @State private var selectedTab: AppTab = .player
+
+    var body: some View {
+        TabView(selection: $selectedTab) {
+            PlayerScreen()
+                .tag(AppTab.player)
+                .tabItem {
+                    Label("tab.player", systemImage: "play.circle.fill")
+                }
+
+            MusicLibraryView()
+                .tag(AppTab.library)
+                .tabItem {
+                    Label("tab.library", systemImage: "square.stack.fill")
+                }
+        }
+        .tint(.white)
+        .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+        .toolbarBackground(.visible, for: .tabBar)
+        .preferredColorScheme(.dark)
+    }
+}
+
+private enum AppTab: Hashable {
+    case player
+    case library
+}
+
+private struct PlayerScreen: View {
     @State private var currentTrackIndex = 0
     @State private var isPlaying = true
     @State private var isFavorite = false
@@ -27,7 +56,8 @@ struct LibraryView: View {
                 playerContent(
                     contentWidth: contentWidth,
                     artworkSize: artworkSize,
-                    compactLayout: compactLayout
+                    compactLayout: compactLayout,
+                    availableHeight: geometry.size.height
                 )
                 .frame(width: geometry.size.width, height: geometry.size.height)
             }
@@ -39,7 +69,8 @@ struct LibraryView: View {
     private func playerContent(
         contentWidth: CGFloat,
         artworkSize: CGFloat,
-        compactLayout: Bool
+        compactLayout: Bool,
+        availableHeight: CGFloat
     ) -> some View {
         let headerGap: CGFloat = compactLayout ? 14 : 20
         let detailsGap: CGFloat = compactLayout ? 16 : 22
@@ -48,53 +79,56 @@ struct LibraryView: View {
         return VStack(alignment: .leading, spacing: 0) {
             playerHeader
 
-            albumArtwork(size: artworkSize)
-                .frame(maxWidth: .infinity)
-                .padding(.top, headerGap)
+            VStack(alignment: .leading, spacing: 0) {
+                albumArtwork(size: artworkSize)
+                    .frame(maxWidth: .infinity)
 
-            trackDetails
-                .padding(.top, detailsGap)
+                trackDetails
+                    .padding(.top, detailsGap)
 
-            progressSection
-                .padding(.top, progressGap)
+                progressSection
+                    .padding(.top, progressGap)
 
-            controls
-                .padding(.top, progressGap)
+                controls
+                    .padding(.top, progressGap)
+            }
+            .frame(maxHeight: .infinity, alignment: .center)
+            .padding(.top, headerGap)
         }
         .frame(width: contentWidth)
-        .frame(maxHeight: .infinity, alignment: .center)
+        .padding(.top, compactLayout ? 6 : 10)
+        .padding(.bottom, compactLayout ? 6 : 10)
+        .frame(height: availableHeight, alignment: .top)
     }
 
     private var playerHeader: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("player.now_playing")
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .tracking(0.7)
-                .foregroundStyle(.white.opacity(0.72))
-
-            HStack(spacing: 12) {
-                Button(action: {}) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "list.bullet")
-                            .font(.system(size: 13, weight: .semibold))
-
-                        Text("player.playlist")
-                            .font(.system(size: 17, weight: .semibold, design: .rounded))
-
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 11, weight: .bold))
-                    }
-                    .foregroundStyle(.white)
-                }
-                .buttonStyle(.plain)
-
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("player.now_playing")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .tracking(0.7)
+                    .foregroundStyle(.white.opacity(0.72))
                 Spacer()
-
                 Button("player.queue", action: {})
-                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
                     .foregroundStyle(.white.opacity(0.82))
                     .buttonStyle(.plain)
             }
+
+            Button(action: {}) {
+                HStack(spacing: 8) {
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: 13, weight: .semibold))
+
+                    Text("player.playlist")
+                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
         }
     }
 

@@ -1,6 +1,29 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "library.add_playlist" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Add playlist" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Добавить плейлист" } } } },
+    "library.artists" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Artists" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Исполнители" } } } },
+    "library.duration_3_04" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "3 h 04 min" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "3 ч 04 мин" } } } },
+    "library.duration_5_48" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "5 h 48 min" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "5 ч 48 мин" } } } },
+    "library.duration_7_12" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "7 h 12 min" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "7 ч 12 мин" } } } },
+    "library.favorites" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Favorites" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Любимые" } } } },
+    "library.liked" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Liked" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Понравившиеся" } } } },
+    "library.liked_detail" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "428 tracks" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "428 треков" } } } },
+    "library.offline" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Offline" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Офлайн" } } } },
+    "library.offline_detail" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "137 tracks · 8.4 GB" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "137 треков · 8,4 ГБ" } } } },
+    "library.playlist_night" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Night vibe" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Ночной вайб" } } } },
+    "library.playlist_night_detail" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "34 tracks" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "34 трека" } } } },
+    "library.playlist_road" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Road" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Дорога" } } } },
+    "library.playlist_road_detail" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "91 tracks" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "91 трек" } } } },
+    "library.playlist_training" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Training" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Тренировки" } } } },
+    "library.playlist_training_detail" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "18 tracks" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "18 треков" } } } },
+    "library.playlists" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Playlists" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Плейлисты" } } } },
+    "library.release_album_2007" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Album · 2007" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Альбом · 2007" } } } },
+    "library.release_album_2013" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Album · 2013" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Альбом · 2013" } } } },
+    "library.release_ep_2011" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "EP · 2011" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "EP · 2011" } } } },
+    "library.releases" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Releases" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Релизы" } } } },
+    "library.title" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Library" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Библиотека" } } } },
+    "library.top_this_month" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Top this month" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Топ в августе" } } } },
     "player.artist" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Echo Within" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Эхо Внутри" } } } },
     "player.artist_aurora" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Northern Current" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Северное течение" } } } },
     "player.artwork" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Album artwork" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Обложка альбома" } } } },
@@ -15,7 +38,9 @@
     "player.queue" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Queue" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Очередь" } } } },
     "player.shuffle" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Shuffle" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Перемешать" } } } },
     "player.track_title" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Pulse of Silence" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Пульс тишины" } } } },
-    "player.track_title_aurora" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Northern Light" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Северный свет" } } } }
+    "player.track_title_aurora" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Northern Light" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Северный свет" } } } },
+    "tab.library" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Library" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Библиотека" } } } },
+    "tab.player" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Player" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Плеер" } } } }
   },
   "version" : "1.0"
 }
