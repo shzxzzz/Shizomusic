@@ -53,6 +53,7 @@ struct ArtistDetailScreen: View {
                         name: model.name,
                         onBack: { dismiss() }
                     )
+                    .padding(.horizontal, -16)
                     .background {
                         GeometryReader { proxy in
                             Color.clear.preference(
@@ -99,6 +100,7 @@ struct ArtistDetailScreen: View {
                 .padding(.bottom, 34)
                 .frame(maxWidth: .infinity)
             }
+            .ignoresSafeArea(edges: .top)
             .coordinateSpace(name: "artist-scroll")
             .onPreferenceChange(ArtistHeroBottomPreferenceKey.self) { value in
                 heroBottom = value

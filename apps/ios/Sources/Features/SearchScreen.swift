@@ -198,10 +198,6 @@ private struct SearchPinnedHeader: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .bottom) {
-            Divider().overlay(.white.opacity(0.08))
-        }
     }
 }
 

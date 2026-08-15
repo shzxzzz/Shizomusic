@@ -10,7 +10,7 @@ struct ArtistHero: View {
                 .resizable()
                 .scaledToFit()
                 .frame(maxWidth: .infinity)
-                .frame(height: 330, alignment: .top)
+                .frame(height: 390, alignment: .top)
                 .clipped()
                 .mask {
                     LinearGradient(
@@ -40,8 +40,8 @@ struct ArtistHero: View {
                 .font(.system(size: 34, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
                 .lineLimit(2)
-                .padding(.horizontal, 4)
-                .padding(.bottom, 10)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 18)
 
             VStack {
                 HStack {
@@ -58,13 +58,13 @@ struct ArtistHero: View {
 
                     Spacer()
                 }
-                .padding(.horizontal, 4)
-                .padding(.top, 12)
+                .padding(.horizontal, 20)
+                .padding(.top, 58)
 
                 Spacer()
             }
         }
-        .frame(height: 330)
+        .frame(height: 390)
     }
 }
 

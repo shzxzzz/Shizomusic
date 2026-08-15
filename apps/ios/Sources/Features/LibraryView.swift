@@ -27,6 +27,14 @@ struct LibraryView: View {
                 .tabItem {
                     Label("tab.search", systemImage: "magnifyingglass")
                 }
+
+            NonPlayerTabShell(onOpenPlayer: { selectedTab = .player }) {
+                FriendsScreen()
+            }
+                .tag(AppTab.friends)
+                .tabItem {
+                    Label("tab.friends", systemImage: "person.2.fill")
+                }
         }
         .tint(.white)
         .toolbarBackground(.ultraThinMaterial, for: .tabBar)
@@ -54,6 +62,7 @@ private enum AppTab: Hashable {
     case player
     case library
     case search
+    case friends
 }
 
 private struct PlayerScreen: View {
@@ -62,6 +71,7 @@ private struct PlayerScreen: View {
     @State private var isFavorite = false
     @State private var isShuffleEnabled = false
     @State private var progress = 0.41
+    @State private var showsQueue = false
 
     var body: some View {
         ZStack {
@@ -87,6 +97,9 @@ private struct PlayerScreen: View {
         .onChange(of: playback.currentTrack.id) {
             progress = 0.08
             isFavorite = false
+        }
+        .sheet(isPresented: $showsQueue) {
+            PlaybackQueueScreen()
         }
         .preferredColorScheme(.dark)
     }
@@ -134,7 +147,7 @@ private struct PlayerScreen: View {
                     .tracking(0.7)
                     .foregroundStyle(.white.opacity(0.72))
                 Spacer()
-                Button("player.queue", action: {})
+                Button("player.queue", action: { showsQueue = true })
                     .font(.system(size: 14, weight: .medium, design: .rounded))
                     .foregroundStyle(.white.opacity(0.82))
                     .buttonStyle(.plain)

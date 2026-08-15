@@ -55,10 +55,17 @@ struct SearchCategoryBar: View {
                             .foregroundStyle(selection == category ? .white : .white.opacity(0.48))
                             .padding(.horizontal, 14)
                             .frame(height: 34)
-                            .background(
-                                selection == category ? Color.purple.opacity(0.30) : Color.white.opacity(0.035),
-                                in: Capsule()
-                            )
+                            .background {
+                                Capsule()
+                                    .fill(.thinMaterial)
+                                    .overlay {
+                                        Capsule().fill(
+                                            selection == category
+                                                ? Color.purple.opacity(0.24)
+                                                : Color.white.opacity(0.025)
+                                        )
+                                    }
+                            }
                             .overlay {
                                 Capsule().stroke(.white.opacity(selection == category ? 0.15 : 0.07), lineWidth: 1)
                             }
