@@ -1,10 +1,14 @@
+import Foundation
 import SwiftUI
 
 struct MusicLibraryView: View {
-    private let playlists = LibraryPlaylist.samples
+    @State private var playlists = LibraryPlaylist.samples
+    @State private var showsCreatePlaylist = false
+
     private let releases = LibraryRelease.samples
     private let topArtists = LibraryTopArtist.samples
     private let favoriteArtists = LibraryFavoriteArtist.samples
+    let onOpenPlayer: () -> Void
 
     var body: some View {
         NavigationStack {
@@ -32,7 +36,35 @@ struct MusicLibraryView: View {
             .navigationDestination(for: CollectionDetailDestination.self) { destination in
                 CollectionDetailScreen(destination: destination)
             }
+            .navigationDestination(for: LibrarySectionDestination.self) { destination in
+                LibrarySectionListScreen(destination: destination)
+            }
+            .navigationDestination(for: ArtistDetailDestination.self) { destination in
+                ArtistDetailScreen(destination: destination)
+            }
             .toolbar(.hidden, for: .navigationBar)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            AppMiniPlayer(onOpenPlayer: onOpenPlayer)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 6)
+        }
+        .sheet(isPresented: $showsCreatePlaylist) {
+            CreatePlaylistSheet { title, artworkStyle in
+                playlists.insert(
+                    LibraryPlaylist(
+                        id: UUID().uuidString,
+                        titleKey: title,
+                        detailKey: "library.playlist_empty_detail",
+                        collectionMetadataKey: "collection.empty_metadata",
+                        detailArtwork: artworkStyle.detailArtwork,
+                        artworkStyle: artworkStyle
+                    ),
+                    at: 0
+                )
+            }
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
         }
         .preferredColorScheme(.dark)
     }
@@ -77,7 +109,11 @@ struct MusicLibraryView: View {
 
     private var playlistsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(titleKey: "library.playlists", showsAddButton: true)
+            SectionHeader(
+                titleKey: "library.playlists",
+                destination: .playlists,
+                onAdd: { showsCreatePlaylist = true }
+            )
 
             LazyVGrid(
                 columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3),
@@ -95,14 +131,17 @@ struct MusicLibraryView: View {
 
     private var releasesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(titleKey: "library.releases")
+            SectionHeader(titleKey: "library.releases", destination: .releases)
 
             LazyVGrid(
                 columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3),
                 spacing: 10
             ) {
                 ForEach(releases) { release in
-                    ReleaseTile(release: release)
+                    NavigationLink(value: release.detailDestination) {
+                        ReleaseTile(release: release)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -110,7 +149,7 @@ struct MusicLibraryView: View {
 
     private var artistsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(titleKey: "library.artists")
+            SectionHeader(titleKey: "library.artists", destination: .artists)
 
             Text("library.top_this_month")
                 .font(.system(size: 12, weight: .medium, design: .rounded))
@@ -118,7 +157,10 @@ struct MusicLibraryView: View {
 
             VStack(spacing: 7) {
                 ForEach(topArtists) { artist in
-                    TopArtistRow(artist: artist)
+                    NavigationLink(value: artist.detailDestination) {
+                        TopArtistRow(artist: artist)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -126,14 +168,17 @@ struct MusicLibraryView: View {
 
     private var favoritesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(titleKey: "library.favorites")
+            SectionHeader(titleKey: "library.favorites", destination: .favorites)
 
             LazyVGrid(
                 columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4),
                 spacing: 12
             ) {
                 ForEach(favoriteArtists) { artist in
-                    FavoriteArtistTile(artist: artist)
+                    NavigationLink(value: artist.detailDestination) {
+                        FavoriteArtistTile(artist: artist)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -199,24 +244,34 @@ private struct QuickAccessCard: View {
 
 private struct SectionHeader: View {
     let titleKey: LocalizedStringKey
-    var showsAddButton = false
+    let destination: LibrarySectionDestination
+    var onAdd: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 12) {
-            Text(titleKey)
-                .font(.system(size: 18, weight: .semibold, design: .rounded))
+            NavigationLink(value: destination) {
+                HStack(spacing: 7) {
+                    Text(titleKey)
+                        .font(.system(size: 18, weight: .semibold, design: .rounded))
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.68))
+                }
+            }
+            .buttonStyle(.plain)
 
             Spacer()
 
-            if showsAddButton {
-                Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .medium))
-                    .accessibilityLabel(Text("library.add_playlist"))
+            if let onAdd {
+                Button(action: onAdd) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 16, weight: .medium))
+                        .frame(width: 32, height: 32)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("library.add_playlist"))
             }
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.68))
         }
         .foregroundStyle(.white)
     }
@@ -402,7 +457,7 @@ private struct LibraryArtwork: View {
     }
 }
 
-private enum LibraryArtworkStyle: String, Sendable {
+private enum LibraryArtworkStyle: String, Hashable, Sendable {
     case mistyLake
     case auroraShore
     case violet
@@ -420,41 +475,37 @@ private enum LibraryArtworkStyle: String, Sendable {
         case .silver: "music.note"
         }
     }
+
+    var detailArtwork: CollectionHeroArtwork {
+        switch self {
+        case .mistyLake, .midnight: .mistyLake
+        case .auroraShore, .sunset: .sunset
+        case .violet: .violet
+        case .silver: .mistyLake
+        }
+    }
 }
 
 private struct LibraryPlaylist: Identifiable, Sendable {
     let id: String
     let titleKey: String
     let detailKey: String
+    let collectionMetadataKey: String
+    let detailArtwork: CollectionHeroArtwork
     let artworkStyle: LibraryArtworkStyle
 
     var detailDestination: CollectionDetailDestination {
-        switch id {
-        case "training":
-            .playlist(
-                titleKey: titleKey,
-                metadataKey: "collection.training_metadata",
-                artwork: .mistyLake
-            )
-        case "road":
-            .playlist(
-                titleKey: titleKey,
-                metadataKey: "collection.road_metadata",
-                artwork: .sunset
-            )
-        default:
-            .playlist(
-                titleKey: titleKey,
-                metadataKey: "collection.night_metadata",
-                artwork: .violet
-            )
-        }
+        .playlist(
+            titleKey: titleKey,
+            metadataKey: collectionMetadataKey,
+            artwork: detailArtwork
+        )
     }
 
     static let samples = [
-        LibraryPlaylist(id: "night", titleKey: "library.playlist_night", detailKey: "library.playlist_night_detail", artworkStyle: .violet),
-        LibraryPlaylist(id: "training", titleKey: "library.playlist_training", detailKey: "library.playlist_training_detail", artworkStyle: .midnight),
-        LibraryPlaylist(id: "road", titleKey: "library.playlist_road", detailKey: "library.playlist_road_detail", artworkStyle: .sunset)
+        LibraryPlaylist(id: "night", titleKey: "library.playlist_night", detailKey: "library.playlist_night_detail", collectionMetadataKey: "collection.night_metadata", detailArtwork: .violet, artworkStyle: .violet),
+        LibraryPlaylist(id: "training", titleKey: "library.playlist_training", detailKey: "library.playlist_training_detail", collectionMetadataKey: "collection.training_metadata", detailArtwork: .mistyLake, artworkStyle: .midnight),
+        LibraryPlaylist(id: "road", titleKey: "library.playlist_road", detailKey: "library.playlist_road_detail", collectionMetadataKey: "collection.road_metadata", detailArtwork: .sunset, artworkStyle: .sunset)
     ]
 }
 
@@ -464,6 +515,14 @@ private struct LibraryRelease: Identifiable, Sendable {
     let artist: String
     let metaKey: String
     let artworkStyle: LibraryArtworkStyle
+
+    var detailDestination: CollectionDetailDestination {
+        .release(
+            title: title,
+            metadataKey: metaKey,
+            artwork: artworkStyle.detailArtwork
+        )
+    }
 
     static let samples = [
         LibraryRelease(id: "ram", title: "Random Access…", artist: "Daft Punk", metaKey: "library.release_album_2013", artworkStyle: .silver),
@@ -479,6 +538,10 @@ private struct LibraryTopArtist: Identifiable, Sendable {
     let durationKey: String
     let avatarStyle: LibraryArtworkStyle
 
+    var detailDestination: ArtistDetailDestination {
+        ArtistDetailDestination(name: name)
+    }
+
     static let samples = [
         LibraryTopArtist(id: 1, rank: 1, name: "Fred again..", durationKey: "library.duration_7_12", avatarStyle: .mistyLake),
         LibraryTopArtist(id: 2, rank: 2, name: "Skrillex", durationKey: "library.duration_5_48", avatarStyle: .sunset),
@@ -491,10 +554,89 @@ private struct LibraryFavoriteArtist: Identifiable, Sendable {
     let name: String
     let avatarStyle: LibraryArtworkStyle
 
+    var detailDestination: ArtistDetailDestination {
+        ArtistDetailDestination(name: name)
+    }
+
     static let samples = [
         LibraryFavoriteArtist(id: "weeknd", name: "The Weeknd", avatarStyle: .midnight),
         LibraryFavoriteArtist(id: "aphextwin", name: "Aphex Twin", avatarStyle: .silver),
         LibraryFavoriteArtist(id: "kanye", name: "Kanye West", avatarStyle: .sunset),
         LibraryFavoriteArtist(id: "boniver", name: "Bon Iver", avatarStyle: .mistyLake)
     ]
+}
+
+private struct CreatePlaylistSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var title = ""
+    @State private var selectedArtwork: LibraryArtworkStyle = .violet
+
+    let onCreate: (String, LibraryArtworkStyle) -> Void
+
+    private let artworkOptions: [LibraryArtworkStyle] = [
+        .violet,
+        .mistyLake,
+        .sunset,
+        .silver
+    ]
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 22) {
+                TextField("playlist_create.name_placeholder", text: $title)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    .padding(.horizontal, 16)
+                    .frame(height: 54)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("playlist_create.cover")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+
+                    HStack(spacing: 12) {
+                        ForEach(artworkOptions, id: \.self) { artwork in
+                            Button {
+                                selectedArtwork = artwork
+                            } label: {
+                                LibraryArtwork(style: artwork)
+                                    .frame(maxWidth: .infinity)
+                                    .aspectRatio(1, contentMode: .fit)
+                                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                                    .overlay {
+                                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                            .stroke(
+                                                selectedArtwork == artwork ? Color.white : Color.white.opacity(0.10),
+                                                lineWidth: selectedArtwork == artwork ? 2 : 1
+                                            )
+                                    }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                Spacer()
+            }
+            .padding(20)
+            .navigationTitle("playlist_create.title")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("playlist_create.cancel") { dismiss() }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("playlist_create.create") {
+                        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                        onCreate(normalizedTitle, selectedArtwork)
+                        dismiss()
+                    }
+                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
 }

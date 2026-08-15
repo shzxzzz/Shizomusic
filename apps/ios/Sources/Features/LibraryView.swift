@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LibraryView: View {
     @State private var selectedTab: AppTab = .player
+    @StateObject private var playback = MockPlaybackState()
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -11,7 +12,7 @@ struct LibraryView: View {
                     Label("tab.player", systemImage: "play.circle.fill")
                 }
 
-            MusicLibraryView()
+            MusicLibraryView(onOpenPlayer: { selectedTab = .player })
                 .tag(AppTab.library)
                 .tabItem {
                     Label("tab.library", systemImage: "square.stack.fill")
@@ -21,6 +22,7 @@ struct LibraryView: View {
         .toolbarBackground(.ultraThinMaterial, for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
         .preferredColorScheme(.dark)
+        .environmentObject(playback)
     }
 }
 
@@ -30,21 +32,15 @@ private enum AppTab: Hashable {
 }
 
 private struct PlayerScreen: View {
-    @State private var currentTrackIndex = 0
-    @State private var isPlaying = true
+    @EnvironmentObject private var playback: MockPlaybackState
+
     @State private var isFavorite = false
     @State private var isShuffleEnabled = false
     @State private var progress = 0.41
 
-    private let tracks = PlayerTrack.samples
-
-    private var currentTrack: PlayerTrack {
-        tracks[currentTrackIndex]
-    }
-
     var body: some View {
         ZStack {
-            PlayerBackground(artworkName: currentTrack.artworkName)
+            PlayerBackground(artworkName: playback.currentTrack.artworkName)
 
             GeometryReader { geometry in
                 let compactLayout = geometry.size.height < 700
@@ -62,7 +58,11 @@ private struct PlayerScreen: View {
                 .frame(width: geometry.size.width, height: geometry.size.height)
             }
         }
-        .animation(.easeInOut(duration: 0.45), value: currentTrackIndex)
+        .animation(.easeInOut(duration: 0.45), value: playback.currentTrack.id)
+        .onChange(of: playback.currentTrack.id) {
+            progress = 0.08
+            isFavorite = false
+        }
         .preferredColorScheme(.dark)
     }
 
@@ -134,12 +134,12 @@ private struct PlayerScreen: View {
 
     private func albumArtwork(size: CGFloat) -> some View {
         ZStack {
-            Image(currentTrack.artworkName)
+            Image(playback.currentTrack.artworkName)
                 .resizable()
                 .scaledToFill()
                 .frame(width: size, height: size)
                 .clipped()
-                .id(currentTrack.artworkName)
+                .id(playback.currentTrack.artworkName)
                 .transition(.opacity.combined(with: .scale(scale: 0.985)))
         }
         .frame(width: size, height: size)
@@ -154,17 +154,17 @@ private struct PlayerScreen: View {
 
     private var trackDetails: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(LocalizedStringKey(currentTrack.titleKey))
+            Text(verbatim: playback.currentTrack.title)
                 .font(.system(size: 23, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white)
                 .lineLimit(1)
-                .id(currentTrack.titleKey)
+                .id(playback.currentTrack.title)
 
-            Text(LocalizedStringKey(currentTrack.artistKey))
+            Text(verbatim: playback.currentTrack.artist)
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(.white.opacity(0.67))
                 .lineLimit(1)
-                .id(currentTrack.artistKey)
+                .id(playback.currentTrack.artist)
         }
         .transition(.opacity)
     }
@@ -175,9 +175,9 @@ private struct PlayerScreen: View {
                 .frame(height: 18)
 
             HStack {
-                Text(verbatim: formattedTime(Int(Double(currentTrack.duration) * progress)))
+                Text(verbatim: formattedTime(Int(Double(playback.currentTrack.durationSeconds) * progress)))
                 Spacer()
-                Text(verbatim: formattedTime(currentTrack.duration))
+                Text(verbatim: formattedTime(playback.currentTrack.durationSeconds))
             }
             .font(.system(size: 12, weight: .medium, design: .rounded).monospacedDigit())
             .foregroundStyle(.white.opacity(0.68))
@@ -198,15 +198,15 @@ private struct PlayerScreen: View {
             PlayerControlButton(
                 systemImage: "backward.fill",
                 accessibilityLabel: "player.previous",
-                action: { changeTrack(by: -1) }
+                action: playback.previous
             )
 
             Spacer()
 
             Button {
-                isPlaying.toggle()
+                playback.togglePlayPause()
             } label: {
-                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(Color(red: 0.34, green: 0.44, blue: 0.50))
                     .frame(width: 60, height: 60)
@@ -214,14 +214,14 @@ private struct PlayerScreen: View {
                     .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(isPlaying ? Text("player.pause") : Text("player.play"))
+            .accessibilityLabel(playback.isPlaying ? Text("player.pause") : Text("player.play"))
 
             Spacer()
 
             PlayerControlButton(
                 systemImage: "forward.fill",
                 accessibilityLabel: "player.next",
-                action: { changeTrack(by: 1) }
+                action: playback.next
             )
 
             Spacer()
@@ -240,16 +240,6 @@ private struct PlayerScreen: View {
         .overlay {
             RoundedRectangle(cornerRadius: 27, style: .continuous)
                 .stroke(.white.opacity(0.13), lineWidth: 1)
-        }
-    }
-
-    private func changeTrack(by offset: Int) {
-        let nextIndex = (currentTrackIndex + offset + tracks.count) % tracks.count
-
-        withAnimation(.easeInOut(duration: 0.45)) {
-            currentTrackIndex = nextIndex
-            progress = 0.08
-            isFavorite = false
         }
     }
 
@@ -346,26 +336,4 @@ private struct PlayerControlButton: View {
         .buttonStyle(.plain)
         .accessibilityLabel(Text(accessibilityLabel))
     }
-}
-
-private struct PlayerTrack: Sendable {
-    let artworkName: String
-    let titleKey: String
-    let artistKey: String
-    let duration: Int
-
-    static let samples = [
-        PlayerTrack(
-            artworkName: "MistyLake",
-            titleKey: "player.track_title",
-            artistKey: "player.artist",
-            duration: 228
-        ),
-        PlayerTrack(
-            artworkName: "AuroraShore",
-            titleKey: "player.track_title_aurora",
-            artistKey: "player.artist_aurora",
-            duration: 264
-        )
-    ]
 }

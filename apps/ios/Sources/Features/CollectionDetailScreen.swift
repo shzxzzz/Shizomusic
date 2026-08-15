@@ -2,6 +2,7 @@ import SwiftUI
 
 enum CollectionDetailDestination: Hashable, Sendable {
     case playlist(titleKey: String, metadataKey: String, artwork: CollectionHeroArtwork)
+    case release(title: String, metadataKey: String, artwork: CollectionHeroArtwork)
     case liked
     case offline
 }
@@ -16,8 +17,10 @@ enum CollectionHeroArtwork: String, Hashable, Sendable {
 struct CollectionDetailScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @EnvironmentObject private var playback: MockPlaybackState
 
     @State private var isEditing = false
+    @State private var isCollectionLiked = false
     @State private var heroBottom: CGFloat = 1_000
 
     let destination: CollectionDetailDestination
@@ -88,11 +91,6 @@ struct CollectionDetailScreen: View {
             }
         }
         .animation(.easeInOut(duration: 0.22), value: showsStickyHeader)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            MiniPlayerPlaceholder()
-                .padding(.horizontal, 10)
-                .padding(.bottom, 6)
-        }
         .toolbar(.hidden, for: .navigationBar)
         .preferredColorScheme(.dark)
     }
@@ -100,7 +98,7 @@ struct CollectionDetailScreen: View {
     @ViewBuilder
     private var collectionHero: some View {
         switch model.kind {
-        case .playlist, .liked:
+        case .playlist, .release, .liked:
             PlaylistCollectionHero(
                 titleKey: model.titleKey,
                 metadataKey: model.metadataKey,
@@ -123,15 +121,18 @@ struct CollectionDetailScreen: View {
                 accent: model.accentColor
             )
 
-            if model.kind != .offline {
+            if model.kind == .playlist || model.kind == .release {
                 CircularDownloadButton(accent: model.accentColor)
+
+                CollectionLikeButton(isLiked: $isCollectionLiked)
             }
         }
     }
 
     @ViewBuilder
     private var secondaryControls: some View {
-        if model.kind == .offline {
+        switch model.kind {
+        case .offline:
             HStack(spacing: 10) {
                 CollectionSecondaryActionButton(
                     titleKey: "collection.add_track",
@@ -145,7 +146,7 @@ struct CollectionDetailScreen: View {
                     accessibilityKey: "collection.open_folder_accessibility"
                 )
             }
-        } else {
+        case .playlist:
             HStack(spacing: 12) {
                 CollectionSecondaryActionButton(
                     titleKey: "collection.add_tracks",
@@ -165,6 +166,8 @@ struct CollectionDetailScreen: View {
                 }
                 .accessibilityLabel(Text("collection.more_actions"))
             }
+        case .liked, .release:
+            EmptyView()
         }
     }
 
@@ -187,7 +190,9 @@ struct CollectionDetailScreen: View {
                 CollectionTrackRow(
                     track: track,
                     kind: model.kind,
-                    isEditing: isEditing
+                    isEditing: isEditing,
+                    isCurrent: playback.currentTrack.id == track.id,
+                    onTap: { playback.play(track.playableTrack) }
                 )
 
                 if track.id != model.tracks.last?.id {
@@ -218,7 +223,7 @@ private struct CollectionNavigationHeader: View {
             }
             .accessibilityLabel(Text("collection.back"))
 
-            Text(LocalizedStringKey(model.navigationTitleKey))
+            Text("library.title")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white.opacity(0.68))
 
@@ -435,6 +440,29 @@ private struct CircularDownloadButton: View {
     }
 }
 
+private struct CollectionLikeButton: View {
+    @Binding var isLiked: Bool
+
+    var body: some View {
+        Button {
+            isLiked.toggle()
+        } label: {
+            Image(systemName: isLiked ? "heart.fill" : "heart")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(isLiked ? .pink : .white.opacity(0.86))
+                .frame(width: 52, height: 52)
+                .background(.thinMaterial, in: Circle())
+                .overlay {
+                    Circle().stroke(.white.opacity(0.14), lineWidth: 1)
+                }
+        }
+        .buttonStyle(CollectionPressButtonStyle())
+        .accessibilityLabel(
+            Text(LocalizedStringKey(isLiked ? "collection.unlike" : "collection.like"))
+        )
+    }
+}
+
 private struct CollectionSecondaryActionButton: View {
     let titleKey: LocalizedStringKey
     let systemImage: String
@@ -461,6 +489,8 @@ private struct CollectionTrackRow: View {
     let track: CollectionTrackPreviewModel
     let kind: CollectionDetailKind
     let isEditing: Bool
+    let isCurrent: Bool
+    let onTap: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -472,23 +502,40 @@ private struct CollectionTrackRow: View {
                     .accessibilityHidden(true)
             }
 
-            CollectionTrackArtworkView(style: track.artwork)
-                .frame(width: 48, height: 48)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            Button {
+                if !isEditing {
+                    onTap()
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    CollectionTrackArtworkView(style: track.artwork)
+                        .frame(width: 48, height: 48)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(verbatim: track.title)
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(verbatim: track.title)
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .foregroundStyle(isCurrent ? Color.cyan.opacity(0.90) : .white)
+                            .lineLimit(1)
 
-                Text(verbatim: track.artist)
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.52))
-                    .lineLimit(1)
+                        Text(verbatim: track.artist)
+                            .font(.system(size: 12, weight: .regular, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.52))
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    if !isEditing {
+                        Text(verbatim: track.durationText)
+                            .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
+                            .foregroundStyle(.white.opacity(0.40))
+                    }
+                }
+                .contentShape(Rectangle())
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-
-            Spacer(minLength: 8)
+            .buttonStyle(.plain)
 
             if isEditing {
                 Button(action: {}) {
@@ -499,15 +546,10 @@ private struct CollectionTrackRow: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("collection.remove_track"))
             } else {
-                Text(verbatim: track.durationText)
-                    .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.40))
-
                 TrackOverflowMenu(track: track, kind: kind)
             }
         }
         .frame(minHeight: 64)
-        .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: "\(track.title), \(track.artist), \(track.durationText)"))
     }
@@ -568,16 +610,18 @@ private struct TrackOverflowMenu: View {
             Divider()
             Button("collection.go_to_artist", action: {})
             Button("collection.go_to_release", action: {})
-            Divider()
-            Button(
-                LocalizedStringKey(
-                    kind == .offline
-                        ? "collection.remove_local_copy"
-                        : "collection.remove_from_playlist"
-                ),
-                role: .destructive,
-                action: {}
-            )
+            if kind != .release {
+                Divider()
+                Button(
+                    LocalizedStringKey(
+                        kind == .offline
+                            ? "collection.remove_local_copy"
+                            : "collection.remove_from_playlist"
+                    ),
+                    role: .destructive,
+                    action: {}
+                )
+            }
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 16, weight: .semibold))
@@ -608,7 +652,8 @@ private struct CollectionOverflowMenu<Label: View>: View {
                 Button("collection.delete_playlist", role: .destructive, action: {})
             case .liked:
                 Button("collection.sort", action: {})
-                Button("collection.download", action: {})
+            case .release:
+                Button("collection.sort", action: {})
             }
         } label: {
             label()
@@ -670,52 +715,6 @@ private struct StickyCollectionHeader: View {
         .overlay(alignment: .bottom) {
             Divider().overlay(.white.opacity(0.10))
         }
-    }
-}
-
-private struct MiniPlayerPlaceholder: View {
-    var body: some View {
-        HStack(spacing: 10) {
-            Image("MistyLake")
-                .resizable()
-                .scaledToFill()
-                .frame(width: 44, height: 44)
-                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("player.track_title")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .lineLimit(1)
-
-                Text("player.artist")
-                    .font(.system(size: 11, weight: .regular, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.54))
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 8)
-
-            Button(action: {}) {
-                Image(systemName: "heart")
-                    .frame(width: 34, height: 44)
-            }
-            .accessibilityLabel(Text("player.favorite"))
-
-            Button(action: {}) {
-                Image(systemName: "pause.fill")
-                    .frame(width: 34, height: 44)
-            }
-            .accessibilityLabel(Text("player.pause"))
-        }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 10)
-        .frame(height: 64)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(.white.opacity(0.13), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.24), radius: 18, y: 8)
     }
 }
 
@@ -785,6 +784,7 @@ private struct CollectionHeroBottomPreferenceKey: PreferenceKey {
 
 enum CollectionDetailKind: String, Hashable, Sendable {
     case playlist
+    case release
     case liked
     case offline
 }
@@ -793,7 +793,6 @@ private struct CollectionDetailPreviewModel: Sendable {
     let kind: CollectionDetailKind
     let titleKey: String
     let metadataKey: String
-    let navigationTitleKey: String
     let heroArtwork: CollectionHeroArtwork?
     let tracks: [CollectionTrackPreviewModel]
 
@@ -803,21 +802,24 @@ private struct CollectionDetailPreviewModel: Sendable {
             self.kind = .playlist
             self.titleKey = titleKey
             self.metadataKey = metadataKey
-            self.navigationTitleKey = "collection.navigation_playlist"
             self.heroArtwork = artwork
             self.tracks = CollectionTrackPreviewModel.playlistSamples
+        case let .release(title, metadataKey, artwork):
+            self.kind = .release
+            self.titleKey = title
+            self.metadataKey = metadataKey
+            self.heroArtwork = artwork
+            self.tracks = CollectionTrackPreviewModel.releaseSamples
         case .liked:
             self.kind = .liked
             self.titleKey = "library.liked"
             self.metadataKey = "collection.liked_metadata"
-            self.navigationTitleKey = "library.liked"
             self.heroArtwork = .liked
             self.tracks = CollectionTrackPreviewModel.likedSamples
         case .offline:
             self.kind = .offline
             self.titleKey = "library.offline"
             self.metadataKey = "collection.offline_metadata"
-            self.navigationTitleKey = "library.offline"
             self.heroArtwork = nil
             self.tracks = CollectionTrackPreviewModel.offlineSamples
         }
@@ -846,6 +848,22 @@ private struct CollectionTrackPreviewModel: Identifiable, Sendable {
     let durationText: String
     let artwork: CollectionTrackArtwork
 
+    var playableTrack: MockPlayableTrack {
+        MockPlayableTrack(
+            id: id,
+            title: title,
+            artist: artist,
+            durationSeconds: durationSeconds,
+            artworkName: artwork.assetName
+        )
+    }
+
+    private var durationSeconds: Int {
+        let components = durationText.split(separator: ":").compactMap { Int($0) }
+        guard components.count == 2 else { return 0 }
+        return components[0] * 60 + components[1]
+    }
+
     static let playlistSamples = [
         CollectionTrackPreviewModel(id: "after-dark", title: "After Dark", artist: "Mr.Kitty", durationText: "3:51", artwork: .violet),
         CollectionTrackPreviewModel(id: "midnight-city", title: "Midnight City", artist: "M83", durationText: "4:03", artwork: .auroraShore),
@@ -871,6 +889,13 @@ private struct CollectionTrackPreviewModel: Identifiable, Sendable {
         CollectionTrackPreviewModel(id: "505-offline", title: "505", artist: "Arctic Monkeys", durationText: "4:13", artwork: .mistyLake),
         CollectionTrackPreviewModel(id: "instant-crush-offline", title: "Instant Crush", artist: "Daft Punk", durationText: "5:37", artwork: .amber)
     ]
+
+    static let releaseSamples = [
+        CollectionTrackPreviewModel(id: "give-life-back", title: "Give Life Back to Music", artist: "Daft Punk", durationText: "4:35", artwork: .graphite),
+        CollectionTrackPreviewModel(id: "game-of-love", title: "The Game of Love", artist: "Daft Punk", durationText: "5:22", artwork: .amber),
+        CollectionTrackPreviewModel(id: "giorgio", title: "Giorgio by Moroder", artist: "Daft Punk", durationText: "9:04", artwork: .violet),
+        CollectionTrackPreviewModel(id: "instant-crush-release", title: "Instant Crush", artist: "Daft Punk", durationText: "5:37", artwork: .auroraShore)
+    ]
 }
 
 private enum CollectionTrackArtwork: String, Hashable, Sendable {
@@ -879,6 +904,13 @@ private enum CollectionTrackArtwork: String, Hashable, Sendable {
     case violet
     case amber
     case graphite
+
+    var assetName: String {
+        switch self {
+        case .mistyLake, .violet, .graphite: "MistyLake"
+        case .auroraShore, .amber: "AuroraShore"
+        }
+    }
 }
 
 private extension CollectionHeroArtwork {
@@ -911,10 +943,12 @@ private extension CollectionHeroArtwork {
             )
         )
     }
+    .environmentObject(MockPlaybackState())
 }
 
 #Preview("Offline detail") {
     NavigationStack {
         CollectionDetailScreen(destination: .offline)
     }
+    .environmentObject(MockPlaybackState())
 }
