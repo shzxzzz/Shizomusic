@@ -7,26 +7,32 @@ struct MusicLibraryView: View {
     private let favoriteArtists = LibraryFavoriteArtist.samples
 
     var body: some View {
-        ZStack {
-            LibraryAmbientBackground()
+        NavigationStack {
+            ZStack {
+                LibraryAmbientBackground()
 
-            ScrollView(showsIndicators: false) {
-                LazyVStack(alignment: .leading, spacing: 24) {
-                    libraryHeader
-                    quickAccess
-                    playlistsSection
-                    releasesSection
+                ScrollView(showsIndicators: false) {
+                    LazyVStack(alignment: .leading, spacing: 24) {
+                        libraryHeader
+                        quickAccess
+                        playlistsSection
+                        releasesSection
 
-                    Divider()
-                        .overlay(.white.opacity(0.12))
+                        Divider()
+                            .overlay(.white.opacity(0.12))
 
-                    artistsSection
-                    favoritesSection
+                        artistsSection
+                        favoritesSection
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 18)
+                    .padding(.bottom, 28)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 18)
-                .padding(.bottom, 28)
             }
+            .navigationDestination(for: CollectionDetailDestination.self) { destination in
+                CollectionDetailScreen(destination: destination)
+            }
+            .toolbar(.hidden, for: .navigationBar)
         }
         .preferredColorScheme(.dark)
     }
@@ -47,19 +53,25 @@ struct MusicLibraryView: View {
 
     private var quickAccess: some View {
         HStack(spacing: 10) {
-            QuickAccessCard(
-                icon: "heart.fill",
-                iconColor: Color(red: 0.91, green: 0.54, blue: 0.96),
-                titleKey: "library.liked",
-                detailKey: "library.liked_detail"
-            )
+            NavigationLink(value: CollectionDetailDestination.liked) {
+                QuickAccessCard(
+                    icon: "heart.fill",
+                    iconColor: Color(red: 0.91, green: 0.54, blue: 0.96),
+                    titleKey: "library.liked",
+                    detailKey: "library.liked_detail"
+                )
+            }
+            .buttonStyle(.plain)
 
-            QuickAccessCard(
-                icon: "arrow.down.circle.fill",
-                iconColor: Color(red: 0.54, green: 0.90, blue: 0.63),
-                titleKey: "library.offline",
-                detailKey: "library.offline_detail"
-            )
+            NavigationLink(value: CollectionDetailDestination.offline) {
+                QuickAccessCard(
+                    icon: "arrow.down.circle.fill",
+                    iconColor: Color(red: 0.72, green: 0.76, blue: 0.80),
+                    titleKey: "library.offline",
+                    detailKey: "library.offline_detail"
+                )
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -72,7 +84,10 @@ struct MusicLibraryView: View {
                 spacing: 10
             ) {
                 ForEach(playlists) { playlist in
-                    PlaylistTile(playlist: playlist)
+                    NavigationLink(value: playlist.detailDestination) {
+                        PlaylistTile(playlist: playlist)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -412,6 +427,29 @@ private struct LibraryPlaylist: Identifiable, Sendable {
     let titleKey: String
     let detailKey: String
     let artworkStyle: LibraryArtworkStyle
+
+    var detailDestination: CollectionDetailDestination {
+        switch id {
+        case "training":
+            .playlist(
+                titleKey: titleKey,
+                metadataKey: "collection.training_metadata",
+                artwork: .mistyLake
+            )
+        case "road":
+            .playlist(
+                titleKey: titleKey,
+                metadataKey: "collection.road_metadata",
+                artwork: .sunset
+            )
+        default:
+            .playlist(
+                titleKey: titleKey,
+                metadataKey: "collection.night_metadata",
+                artwork: .violet
+            )
+        }
+    }
 
     static let samples = [
         LibraryPlaylist(id: "night", titleKey: "library.playlist_night", detailKey: "library.playlist_night_detail", artworkStyle: .violet),
