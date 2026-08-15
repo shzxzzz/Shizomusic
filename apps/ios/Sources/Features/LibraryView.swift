@@ -1,50 +1,72 @@
 import SwiftUI
 
 struct LibraryView: View {
+    @State private var currentTrackIndex = 0
     @State private var isPlaying = true
     @State private var isFavorite = false
     @State private var isShuffleEnabled = false
     @State private var progress = 0.41
 
+    private let tracks = PlayerTrack.samples
+
+    private var currentTrack: PlayerTrack {
+        tracks[currentTrackIndex]
+    }
+
     var body: some View {
-        GeometryReader { geometry in
-            let horizontalPadding: CGFloat = 28
-            let availableWidth = geometry.size.width - horizontalPadding * 2
-            let artworkSize = min(availableWidth, geometry.size.height * 0.44)
+        ZStack {
+            PlayerBackground(artworkName: currentTrack.artworkName)
 
-            ZStack {
-                PlayerBackground()
+            GeometryReader { geometry in
+                let compactLayout = geometry.size.height < 700
+                let horizontalPadding: CGFloat = 24
+                let contentWidth = min(geometry.size.width - horizontalPadding * 2, 420)
+                let artworkRatio = compactLayout ? 0.34 : 0.39
+                let artworkSize = min(contentWidth, geometry.size.height * artworkRatio)
 
-                VStack(alignment: .leading, spacing: 0) {
-                    playerHeader
-
-                    Spacer(minLength: 18)
-
-                    albumArtwork(size: artworkSize)
-                        .frame(maxWidth: .infinity)
-
-                    Spacer(minLength: 22)
-
-                    trackDetails
-
-                    Spacer(minLength: 18)
-
-                    progressSection
-
-                    Spacer(minLength: 20)
-
-                    controls
-                }
-                .padding(.horizontal, horizontalPadding)
-                .padding(.top, 18)
-                .padding(.bottom, 12)
+                playerContent(
+                    contentWidth: contentWidth,
+                    artworkSize: artworkSize,
+                    compactLayout: compactLayout
+                )
+                .frame(width: geometry.size.width, height: geometry.size.height)
             }
         }
+        .animation(.easeInOut(duration: 0.45), value: currentTrackIndex)
         .preferredColorScheme(.dark)
     }
 
+    private func playerContent(
+        contentWidth: CGFloat,
+        artworkSize: CGFloat,
+        compactLayout: Bool
+    ) -> some View {
+        let headerGap: CGFloat = compactLayout ? 14 : 20
+        let detailsGap: CGFloat = compactLayout ? 16 : 22
+        let progressGap: CGFloat = compactLayout ? 14 : 20
+
+        return VStack(alignment: .leading, spacing: 0) {
+            playerHeader
+
+            albumArtwork(size: artworkSize)
+                .frame(maxWidth: .infinity)
+                .padding(.top, headerGap)
+
+            trackDetails
+                .padding(.top, detailsGap)
+
+            progressSection
+                .padding(.top, progressGap)
+
+            controls
+                .padding(.top, progressGap)
+        }
+        .frame(width: contentWidth)
+        .frame(maxHeight: .infinity, alignment: .center)
+    }
+
     private var playerHeader: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("player.now_playing")
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .tracking(0.7)
@@ -77,42 +99,51 @@ struct LibraryView: View {
     }
 
     private func albumArtwork(size: CGFloat) -> some View {
-        Image("MistyLake")
-            .resizable()
-            .scaledToFill()
-            .frame(width: size, height: size)
-            .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 30, style: .continuous)
-                    .stroke(.white.opacity(0.38), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.28), radius: 20, y: 12)
-            .accessibilityLabel(Text("player.artwork"))
+        ZStack {
+            Image(currentTrack.artworkName)
+                .resizable()
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipped()
+                .id(currentTrack.artworkName)
+                .transition(.opacity.combined(with: .scale(scale: 0.985)))
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(.white.opacity(0.34), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.26), radius: 18, y: 10)
+        .accessibilityLabel(Text("player.artwork"))
     }
 
     private var trackDetails: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("player.track_title")
-                .font(.system(size: 24, weight: .semibold, design: .rounded))
+        VStack(alignment: .leading, spacing: 5) {
+            Text(LocalizedStringKey(currentTrack.titleKey))
+                .font(.system(size: 23, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white)
                 .lineLimit(1)
+                .id(currentTrack.titleKey)
 
-            Text("player.artist")
+            Text(LocalizedStringKey(currentTrack.artistKey))
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(.white.opacity(0.67))
                 .lineLimit(1)
+                .id(currentTrack.artistKey)
         }
+        .transition(.opacity)
     }
 
     private var progressSection: some View {
-        VStack(spacing: 9) {
+        VStack(spacing: 8) {
             PlayerProgressView(progress: $progress)
                 .frame(height: 18)
 
             HStack {
-                Text(verbatim: "1:32")
+                Text(verbatim: formattedTime(Int(Double(currentTrack.duration) * progress)))
                 Spacer()
-                Text(verbatim: "3:48")
+                Text(verbatim: formattedTime(currentTrack.duration))
             }
             .font(.system(size: 12, weight: .medium, design: .rounded).monospacedDigit())
             .foregroundStyle(.white.opacity(0.68))
@@ -133,7 +164,7 @@ struct LibraryView: View {
             PlayerControlButton(
                 systemImage: "backward.fill",
                 accessibilityLabel: "player.previous",
-                action: {}
+                action: { changeTrack(by: -1) }
             )
 
             Spacer()
@@ -143,8 +174,8 @@ struct LibraryView: View {
             } label: {
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(Color(red: 0.37, green: 0.46, blue: 0.52))
-                    .frame(width: 62, height: 62)
+                    .foregroundStyle(Color(red: 0.34, green: 0.44, blue: 0.50))
+                    .frame(width: 60, height: 60)
                     .background(.white, in: Circle())
                     .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
             }
@@ -156,7 +187,7 @@ struct LibraryView: View {
             PlayerControlButton(
                 systemImage: "forward.fill",
                 accessibilityLabel: "player.next",
-                action: {}
+                action: { changeTrack(by: 1) }
             )
 
             Spacer()
@@ -169,32 +200,58 @@ struct LibraryView: View {
             )
         }
         .padding(.horizontal, 18)
-        .frame(height: 84)
+        .frame(maxWidth: .infinity)
+        .frame(height: 82)
         .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 27, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 27, style: .continuous)
                 .stroke(.white.opacity(0.13), lineWidth: 1)
         }
     }
+
+    private func changeTrack(by offset: Int) {
+        let nextIndex = (currentTrackIndex + offset + tracks.count) % tracks.count
+
+        withAnimation(.easeInOut(duration: 0.45)) {
+            currentTrackIndex = nextIndex
+            progress = 0.08
+            isFavorite = false
+        }
+    }
+
+    private func formattedTime(_ seconds: Int) -> String {
+        let minutes = seconds / 60
+        let remainingSeconds = seconds % 60
+        return "\(minutes):\(remainingSeconds < 10 ? "0" : "")\(remainingSeconds)"
+    }
 }
 
 private struct PlayerBackground: View {
+    let artworkName: String
+
     var body: some View {
-        ZStack {
-            Image("MistyLake")
-                .resizable()
-                .scaledToFill()
-                .blur(radius: 55)
-                .scaleEffect(1.24)
+        GeometryReader { geometry in
+            ZStack {
+                Image(artworkName)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .scaleEffect(1.16)
+                    .blur(radius: 52)
+                    .id(artworkName)
+                    .transition(.opacity)
 
-            Color(red: 0.39, green: 0.49, blue: 0.56)
-                .opacity(0.72)
+                Color(red: 0.34, green: 0.43, blue: 0.49)
+                    .opacity(0.58)
 
-            LinearGradient(
-                colors: [.white.opacity(0.10), .clear, .black.opacity(0.08)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+                LinearGradient(
+                    colors: [.white.opacity(0.09), .clear, .black.opacity(0.16)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .clipped()
         }
         .ignoresSafeArea()
     }
@@ -205,7 +262,7 @@ private struct PlayerProgressView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let width = geometry.size.width
+            let width = max(geometry.size.width, 1)
             let clampedProgress = min(max(progress, 0), 1)
             let thumbOffset = max(0, min(width - 12, width * clampedProgress - 6))
 
@@ -255,4 +312,26 @@ private struct PlayerControlButton: View {
         .buttonStyle(.plain)
         .accessibilityLabel(Text(accessibilityLabel))
     }
+}
+
+private struct PlayerTrack: Sendable {
+    let artworkName: String
+    let titleKey: String
+    let artistKey: String
+    let duration: Int
+
+    static let samples = [
+        PlayerTrack(
+            artworkName: "MistyLake",
+            titleKey: "player.track_title",
+            artistKey: "player.artist",
+            duration: 228
+        ),
+        PlayerTrack(
+            artworkName: "AuroraShore",
+            titleKey: "player.track_title_aurora",
+            artistKey: "player.artist_aurora",
+            duration: 264
+        )
+    ]
 }

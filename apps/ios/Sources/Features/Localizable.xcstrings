@@ -2,6 +2,7 @@
   "sourceLanguage" : "en",
   "strings" : {
     "player.artist" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Echo Within" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Эхо Внутри" } } } },
+    "player.artist_aurora" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Northern Current" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Северное течение" } } } },
     "player.artwork" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Album artwork" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Обложка альбома" } } } },
     "player.favorite" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Favorite" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Добавить в любимые" } } } },
     "player.next" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Next track" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Следующий трек" } } } },
@@ -13,7 +14,8 @@
     "player.progress" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Playback position" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Позиция воспроизведения" } } } },
     "player.queue" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Queue" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Очередь" } } } },
     "player.shuffle" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Shuffle" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Перемешать" } } } },
-    "player.track_title" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Pulse of Silence" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Пульс тишины" } } } }
+    "player.track_title" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Pulse of Silence" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Пульс тишины" } } } },
+    "player.track_title_aurora" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Northern Light" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Северный свет" } } } }
   },
   "version" : "1.0"
 }

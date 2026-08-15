@@ -17,6 +17,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.shizomusic.app
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIBackgroundModes: audio
         INFOPLIST_KEY_CFBundleDisplayName: ShizoMusic
     scheme:
