@@ -236,7 +236,7 @@ private struct CollectionNavigationHeader: View {
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white)
                 .buttonStyle(.plain)
-            } else {
+            } else if model.kind != .release {
                 CollectionOverflowMenu(kind: model.kind, isEditing: $isEditing) {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 18, weight: .semibold))
@@ -653,7 +653,7 @@ private struct CollectionOverflowMenu<Label: View>: View {
             case .liked:
                 Button("collection.sort", action: {})
             case .release:
-                Button("collection.sort", action: {})
+                EmptyView()
             }
         } label: {
             label()

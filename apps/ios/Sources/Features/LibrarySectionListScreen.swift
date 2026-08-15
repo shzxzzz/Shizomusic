@@ -4,14 +4,12 @@ enum LibrarySectionDestination: String, Hashable, Sendable {
     case playlists
     case releases
     case artists
-    case favorites
 
     var titleKey: LocalizedStringKey {
         switch self {
         case .playlists: "library.playlists"
         case .releases: "library.releases"
         case .artists: "library.artists"
-        case .favorites: "library.favorites"
         }
     }
 }
@@ -65,10 +63,64 @@ struct LibrarySectionListScreen: View {
         case .releases:
             LibraryReleaseGrid()
         case .artists:
-            LibraryArtistList(artists: LibraryListArtist.allArtists)
-        case .favorites:
-            LibraryArtistList(artists: LibraryListArtist.favoriteArtists)
+            LibraryArtistsPage()
         }
+    }
+}
+
+private struct LibraryArtistsPage: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 11) {
+                Text("library.top_by_listening")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 10) {
+                        ForEach(LibraryTopListenedArtist.samples) { artist in
+                            NavigationLink(value: ArtistDetailDestination(name: artist.name)) {
+                                HStack(spacing: 11) {
+                                    Text(verbatim: artist.rank)
+                                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                                        .foregroundStyle(.white.opacity(0.46))
+
+                                    LibraryListArtwork(style: artist.artwork)
+                                        .frame(width: 46, height: 46)
+                                        .clipShape(Circle())
+
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(verbatim: artist.name)
+                                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                            .lineLimit(1)
+
+                                        Text(LocalizedStringKey(artist.listeningTimeKey))
+                                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                                            .foregroundStyle(.white.opacity(0.44))
+                                    }
+                                }
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 12)
+                                .frame(width: 224, height: 66, alignment: .leading)
+                                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 19, style: .continuous))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 19, style: .continuous)
+                                        .stroke(.white.opacity(0.10), lineWidth: 1)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("library.liked_artists")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+
+                LibraryArtistList(artists: LibraryListArtist.likedArtists)
+            }
+        }
+        .foregroundStyle(.white)
     }
 }
 
@@ -289,11 +341,27 @@ private struct LibraryListArtist: Identifiable, Sendable {
         LibraryListArtist(id: "radiohead", name: "Radiohead", artwork: .shore)
     ]
 
-    static let favoriteArtists = [
+    static let likedArtists = [
         LibraryListArtist(id: "weeknd", name: "The Weeknd", artwork: .artist),
         LibraryListArtist(id: "aphex", name: "Aphex Twin", artwork: .silver),
         LibraryListArtist(id: "kanye", name: "Kanye West", artwork: .amber),
-        LibraryListArtist(id: "boniver", name: "Bon Iver", artwork: .misty)
+        LibraryListArtist(id: "boniver", name: "Bon Iver", artwork: .misty),
+        LibraryListArtist(id: "fred", name: "Fred again..", artwork: .shore),
+        LibraryListArtist(id: "skrillex", name: "Skrillex", artwork: .violet)
+    ]
+}
+
+private struct LibraryTopListenedArtist: Identifiable, Sendable {
+    let id: String
+    let rank: String
+    let name: String
+    let listeningTimeKey: String
+    let artwork: LibraryListArtworkStyle
+
+    static let samples = [
+        LibraryTopListenedArtist(id: "fred", rank: "1", name: "Fred again..", listeningTimeKey: "library.duration_7_12", artwork: .shore),
+        LibraryTopListenedArtist(id: "skrillex", rank: "2", name: "Skrillex", listeningTimeKey: "library.duration_5_48", artwork: .artist),
+        LibraryTopListenedArtist(id: "burial", rank: "3", name: "Burial", listeningTimeKey: "library.duration_3_04", artwork: .violet)
     ]
 }
 

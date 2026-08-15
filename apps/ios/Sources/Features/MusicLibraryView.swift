@@ -7,8 +7,6 @@ struct MusicLibraryView: View {
 
     private let releases = LibraryRelease.samples
     private let topArtists = LibraryTopArtist.samples
-    private let favoriteArtists = LibraryFavoriteArtist.samples
-    let onOpenPlayer: () -> Void
 
     var body: some View {
         NavigationStack {
@@ -26,7 +24,6 @@ struct MusicLibraryView: View {
                             .overlay(.white.opacity(0.12))
 
                         artistsSection
-                        favoritesSection
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 18)
@@ -42,12 +39,10 @@ struct MusicLibraryView: View {
             .navigationDestination(for: ArtistDetailDestination.self) { destination in
                 ArtistDetailScreen(destination: destination)
             }
+            .navigationDestination(for: ArtistSectionDestination.self) { destination in
+                ArtistSectionListScreen(destination: destination)
+            }
             .toolbar(.hidden, for: .navigationBar)
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            AppMiniPlayer(onOpenPlayer: onOpenPlayer)
-                .padding(.horizontal, 10)
-                .padding(.bottom, 6)
         }
         .sheet(isPresented: $showsCreatePlaylist) {
             CreatePlaylistSheet { title, artworkStyle in
@@ -155,30 +150,15 @@ struct MusicLibraryView: View {
                 .font(.system(size: 12, weight: .medium, design: .rounded))
                 .foregroundStyle(.white.opacity(0.48))
 
-            VStack(spacing: 7) {
-                ForEach(topArtists) { artist in
-                    NavigationLink(value: artist.detailDestination) {
-                        TopArtistRow(artist: artist)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 10) {
+                    ForEach(topArtists) { artist in
+                        NavigationLink(value: artist.detailDestination) {
+                            TopArtistRow(artist: artist)
+                                .frame(width: 230)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-    }
-
-    private var favoritesSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(titleKey: "library.favorites", destination: .favorites)
-
-            LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4),
-                spacing: 12
-            ) {
-                ForEach(favoriteArtists) { artist in
-                    NavigationLink(value: artist.detailDestination) {
-                        FavoriteArtistTile(artist: artist)
-                    }
-                    .buttonStyle(.plain)
                 }
             }
         }
@@ -374,23 +354,6 @@ private struct TopArtistRow: View {
     }
 }
 
-private struct FavoriteArtistTile: View {
-    let artist: LibraryFavoriteArtist
-
-    var body: some View {
-        VStack(spacing: 8) {
-            ArtistAvatar(style: artist.avatarStyle)
-                .aspectRatio(1, contentMode: .fit)
-
-            Text(verbatim: artist.name)
-                .font(.system(size: 10, weight: .medium, design: .rounded))
-                .lineLimit(1)
-                .minimumScaleFactor(0.78)
-        }
-        .foregroundStyle(.white)
-    }
-}
-
 private struct ArtistAvatar: View {
     let style: LibraryArtworkStyle
 
@@ -546,23 +509,6 @@ private struct LibraryTopArtist: Identifiable, Sendable {
         LibraryTopArtist(id: 1, rank: 1, name: "Fred again..", durationKey: "library.duration_7_12", avatarStyle: .mistyLake),
         LibraryTopArtist(id: 2, rank: 2, name: "Skrillex", durationKey: "library.duration_5_48", avatarStyle: .sunset),
         LibraryTopArtist(id: 3, rank: 3, name: "Burial", durationKey: "library.duration_3_04", avatarStyle: .midnight)
-    ]
-}
-
-private struct LibraryFavoriteArtist: Identifiable, Sendable {
-    let id: String
-    let name: String
-    let avatarStyle: LibraryArtworkStyle
-
-    var detailDestination: ArtistDetailDestination {
-        ArtistDetailDestination(name: name)
-    }
-
-    static let samples = [
-        LibraryFavoriteArtist(id: "weeknd", name: "The Weeknd", avatarStyle: .midnight),
-        LibraryFavoriteArtist(id: "aphextwin", name: "Aphex Twin", avatarStyle: .silver),
-        LibraryFavoriteArtist(id: "kanye", name: "Kanye West", avatarStyle: .sunset),
-        LibraryFavoriteArtist(id: "boniver", name: "Bon Iver", avatarStyle: .mistyLake)
     ]
 }
 

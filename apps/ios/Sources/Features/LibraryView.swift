@@ -12,10 +12,20 @@ struct LibraryView: View {
                     Label("tab.player", systemImage: "play.circle.fill")
                 }
 
-            MusicLibraryView(onOpenPlayer: { selectedTab = .player })
+            NonPlayerTabShell(onOpenPlayer: { selectedTab = .player }) {
+                MusicLibraryView()
+            }
                 .tag(AppTab.library)
                 .tabItem {
                     Label("tab.library", systemImage: "square.stack.fill")
+                }
+
+            NonPlayerTabShell(onOpenPlayer: { selectedTab = .player }) {
+                SearchScreen()
+            }
+                .tag(AppTab.search)
+                .tabItem {
+                    Label("tab.search", systemImage: "magnifyingglass")
                 }
         }
         .tint(.white)
@@ -26,9 +36,24 @@ struct LibraryView: View {
     }
 }
 
+private struct NonPlayerTabShell<Content: View>: View {
+    let onOpenPlayer: () -> Void
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        content()
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                AppMiniPlayer(onOpenPlayer: onOpenPlayer)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 6)
+            }
+    }
+}
+
 private enum AppTab: Hashable {
     case player
     case library
+    case search
 }
 
 private struct PlayerScreen: View {

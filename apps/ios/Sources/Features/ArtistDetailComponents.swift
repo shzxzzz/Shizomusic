@@ -8,12 +8,30 @@ struct ArtistHero: View {
         ZStack(alignment: .bottomLeading) {
             Image("ArtistHero")
                 .resizable()
-                .scaledToFill()
-                .frame(height: 330)
+                .scaledToFit()
+                .frame(maxWidth: .infinity)
+                .frame(height: 330, alignment: .top)
                 .clipped()
+                .mask {
+                    LinearGradient(
+                        stops: [
+                            .init(color: .white, location: 0),
+                            .init(color: .white, location: 0.55),
+                            .init(color: .white.opacity(0.52), location: 0.68),
+                            .init(color: .clear, location: 0.79)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
 
             LinearGradient(
-                colors: [.clear, .black.opacity(0.18), .black.opacity(0.94)],
+                stops: [
+                    .init(color: .clear, location: 0.32),
+                    .init(color: .black.opacity(0.18), location: 0.52),
+                    .init(color: Color(red: 0.024, green: 0.026, blue: 0.034), location: 0.80),
+                    .init(color: Color(red: 0.024, green: 0.026, blue: 0.034), location: 1)
+                ],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -22,8 +40,8 @@ struct ArtistHero: View {
                 .font(.system(size: 34, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
                 .lineLimit(2)
-                .padding(.horizontal, 18)
-                .padding(.bottom, 18)
+                .padding(.horizontal, 4)
+                .padding(.bottom, 10)
 
             VStack {
                 HStack {
@@ -33,28 +51,20 @@ struct ArtistHero: View {
                             Text("library.title")
                         }
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 12)
-                        .frame(height: 38)
-                        .background(.ultraThinMaterial, in: Capsule())
+                        .foregroundStyle(.white.opacity(0.76))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(Text("collection.back"))
 
                     Spacer()
                 }
-                .padding(14)
+                .padding(.horizontal, 4)
+                .padding(.top, 12)
 
                 Spacer()
             }
         }
         .frame(height: 330)
-        .clipShape(RoundedRectangle(cornerRadius: 25, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 25, style: .continuous)
-                .stroke(.white.opacity(0.12), lineWidth: 1)
-        }
-        .shadow(color: .purple.opacity(0.24), radius: 32, y: 15)
     }
 }
 
@@ -155,6 +165,7 @@ struct ArtistLatestReleaseSection: View {
 }
 
 struct ArtistTracksSection: View {
+    let artistName: String
     let titleKey: LocalizedStringKey
     let tracks: [ArtistTrackPreviewModel]
     let currentTrackID: String
@@ -162,7 +173,10 @@ struct ArtistTracksSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ArtistSectionHeader(titleKey: titleKey)
+            ArtistSectionHeader(
+                titleKey: titleKey,
+                destination: ArtistSectionDestination(artistName: artistName, kind: .allTracks)
+            )
 
             VStack(spacing: 0) {
                 ForEach(tracks) { track in
@@ -217,11 +231,15 @@ struct ArtistTrackRow: View {
 }
 
 struct ArtistReleasesSection: View {
+    let artistName: String
     let releases: [ArtistReleasePreviewModel]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ArtistSectionHeader(titleKey: "artist.releases")
+            ArtistSectionHeader(
+                titleKey: "artist.releases",
+                destination: ArtistSectionDestination(artistName: artistName, kind: .releases)
+            )
 
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 12) {
@@ -255,16 +273,20 @@ struct ArtistReleasesSection: View {
 }
 
 struct ArtistCompilationsSection: View {
+    let artistName: String
     let compilations: [ArtistCompilationPreviewModel]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ArtistSectionHeader(titleKey: "artist.compilations")
+            ArtistSectionHeader(
+                titleKey: "artist.compilations",
+                destination: ArtistSectionDestination(artistName: artistName, kind: .compilations)
+            )
 
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 12) {
                     ForEach(compilations) { compilation in
-                        Button(action: {}) {
+                        NavigationLink(value: compilation.detailDestination) {
                             HStack(spacing: 10) {
                                 Image(compilation.artworkName)
                                     .resizable()
@@ -306,6 +328,7 @@ struct ArtistCompilationsSection: View {
 }
 
 struct ArtistFamiliarSection: View {
+    let artistName: String
     @Binding var selection: ArtistFamiliarSelection
     let likedTracks: [ArtistTrackPreviewModel]
     let familiarTracks: [ArtistTrackPreviewModel]
@@ -318,7 +341,10 @@ struct ArtistFamiliarSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ArtistSectionHeader(titleKey: "artist.familiar")
+            ArtistSectionHeader(
+                titleKey: "artist.familiar",
+                destination: ArtistSectionDestination(artistName: artistName, kind: .familiar)
+            )
 
             ArtistFamiliarSegmentedControl(selection: $selection)
 
@@ -375,9 +401,10 @@ struct ArtistFamiliarSegmentedControl: View {
 
 struct ArtistSectionHeader: View {
     let titleKey: LocalizedStringKey
+    let destination: ArtistSectionDestination
 
     var body: some View {
-        Button(action: {}) {
+        NavigationLink(value: destination) {
             HStack(spacing: 7) {
                 Text(titleKey)
                     .font(.system(size: 19, weight: .bold, design: .rounded))
@@ -400,9 +427,15 @@ struct StickyArtistHeader: View {
     var body: some View {
         HStack(spacing: 12) {
             Button(action: onBack) {
-                Image(systemName: "chevron.left")
-                    .frame(width: 36, height: 36)
+                HStack(spacing: 7) {
+                    Image(systemName: "chevron.left")
+                    Text("library.title")
+                }
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.74))
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("collection.back"))
 
             Text(verbatim: name)
                 .font(.system(size: 16, weight: .semibold, design: .rounded))

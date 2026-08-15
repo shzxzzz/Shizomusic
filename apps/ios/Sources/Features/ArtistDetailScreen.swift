@@ -4,6 +4,27 @@ struct ArtistDetailDestination: Hashable, Sendable {
     let name: String
 }
 
+enum ArtistSectionKind: String, Hashable, Sendable {
+    case allTracks
+    case releases
+    case compilations
+    case familiar
+
+    var titleKey: LocalizedStringKey {
+        switch self {
+        case .allTracks: "artist.all_tracks"
+        case .releases: "artist.releases"
+        case .compilations: "artist.compilations"
+        case .familiar: "artist.familiar"
+        }
+    }
+}
+
+struct ArtistSectionDestination: Hashable, Sendable {
+    let artistName: String
+    let kind: ArtistSectionKind
+}
+
 struct ArtistDetailScreen: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var playback: MockPlaybackState
@@ -53,17 +74,19 @@ struct ArtistDetailScreen: View {
                     )
 
                     ArtistTracksSection(
+                        artistName: model.name,
                         titleKey: "artist.all_tracks",
                         tracks: model.recentTracks,
                         currentTrackID: playback.currentTrack.id,
                         onTrackTapped: playTrack
                     )
 
-                    ArtistReleasesSection(releases: model.releases)
+                    ArtistReleasesSection(artistName: model.name, releases: model.releases)
 
-                    ArtistCompilationsSection(compilations: model.compilations)
+                    ArtistCompilationsSection(artistName: model.name, compilations: model.compilations)
 
                     ArtistFamiliarSection(
+                        artistName: model.name,
                         selection: $familiarSelection,
                         likedTracks: model.likedTracks,
                         familiarTracks: model.familiarTracks,
@@ -208,11 +231,16 @@ struct ArtistCompilationPreviewModel: Identifiable, Hashable, Sendable {
     let artist: String
     let year: String
     let artworkName: String
+    let detailArtwork: CollectionHeroArtwork
+
+    var detailDestination: CollectionDetailDestination {
+        .release(title: title, metadataKey: "artist.compilation_metadata", artwork: detailArtwork)
+    }
 
     static let samples = [
-        ArtistCompilationPreviewModel(id: "popular", title: "Popular", artist: "Madonna", year: "2023", artworkName: "ArtistHero"),
-        ArtistCompilationPreviewModel(id: "one-right-now", title: "One Right Now", artist: "Post Malone", year: "2022", artworkName: "AuroraShore"),
-        ArtistCompilationPreviewModel(id: "moth-to-flame", title: "Moth To A Flame", artist: "Swedish House Mafia", year: "2021", artworkName: "MistyLake")
+        ArtistCompilationPreviewModel(id: "popular", title: "Popular", artist: "Madonna", year: "2023", artworkName: "ArtistHero", detailArtwork: .violet),
+        ArtistCompilationPreviewModel(id: "one-right-now", title: "One Right Now", artist: "Post Malone", year: "2022", artworkName: "AuroraShore", detailArtwork: .sunset),
+        ArtistCompilationPreviewModel(id: "moth-to-flame", title: "Moth To A Flame", artist: "Swedish House Mafia", year: "2021", artworkName: "MistyLake", detailArtwork: .mistyLake)
     ]
 }
 
