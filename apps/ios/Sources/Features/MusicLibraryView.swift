@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 
 struct MusicLibraryView: View {
+    @EnvironmentObject private var localLibrary: LocalMediaLibrary
     @State private var playlists = LibraryPlaylist.samples
     @State private var showsCreatePlaylist = false
 
@@ -95,11 +96,18 @@ struct MusicLibraryView: View {
                     icon: "arrow.down.circle.fill",
                     iconColor: Color(red: 0.72, green: 0.76, blue: 0.80),
                     titleKey: "library.offline",
-                    detailKey: "library.offline_detail"
+                    detailKey: "library.offline_detail",
+                    detailText: offlineMetadata
                 )
             }
             .buttonStyle(.plain)
         }
+    }
+
+    private var offlineMetadata: String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return "\(localLibrary.tracks.count) · \(formatter.string(fromByteCount: localLibrary.totalBytes))"
     }
 
     private var playlistsSection: some View {
@@ -190,6 +198,7 @@ private struct QuickAccessCard: View {
     let iconColor: Color
     let titleKey: LocalizedStringKey
     let detailKey: LocalizedStringKey
+    var detailText: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -202,7 +211,13 @@ private struct QuickAccessCard: View {
             }
             .font(.system(size: 13, weight: .semibold, design: .rounded))
 
-            Text(detailKey)
+            Group {
+                if let detailText {
+                    Text(verbatim: detailText)
+                } else {
+                    Text(detailKey)
+                }
+            }
                 .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundStyle(.white.opacity(0.58))
                 .lineLimit(1)

@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum CollectionDetailDestination: Hashable, Sendable {
     case playlist(titleKey: String, metadataKey: String, artwork: CollectionHeroArtwork)
@@ -17,11 +18,13 @@ enum CollectionHeroArtwork: String, Hashable, Sendable {
 struct CollectionDetailScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @EnvironmentObject private var playback: MockPlaybackState
+    @EnvironmentObject private var playback: PlaybackCoordinator
+    @EnvironmentObject private var localLibrary: LocalMediaLibrary
 
     @State private var isEditing = false
     @State private var isCollectionLiked = false
     @State private var heroBottom: CGFloat = 1_000
+    @State private var showsFileImporter = false
 
     let destination: CollectionDetailDestination
 
@@ -31,6 +34,11 @@ struct CollectionDetailScreen: View {
 
     private var showsStickyHeader: Bool {
         heroBottom < 84
+    }
+
+    private var displayedTracks: [CollectionTrackPreviewModel] {
+        guard model.kind == .offline else { return model.tracks }
+        return localLibrary.tracks.map(CollectionTrackPreviewModel.init(playableTrack:))
     }
 
     var body: some View {
@@ -93,6 +101,14 @@ struct CollectionDetailScreen: View {
         .animation(.easeInOut(duration: 0.22), value: showsStickyHeader)
         .toolbar(.hidden, for: .navigationBar)
         .preferredColorScheme(.dark)
+        .fileImporter(
+            isPresented: $showsFileImporter,
+            allowedContentTypes: [.audio],
+            allowsMultipleSelection: true
+        ) { result in
+            guard case let .success(urls) = result else { return }
+            Task { await localLibrary.importFiles(urls) }
+        }
     }
 
     @ViewBuilder
@@ -108,7 +124,7 @@ struct CollectionDetailScreen: View {
         case .offline:
             OfflineCollectionHero(
                 titleKey: model.titleKey,
-                metadataKey: model.metadataKey
+                metadataText: offlineMetadata
             )
         }
     }
@@ -118,7 +134,8 @@ struct CollectionDetailScreen: View {
         HStack(spacing: 12) {
             PrimaryPlayButton(
                 isOffline: model.kind == .offline,
-                accent: model.accentColor
+                accent: model.accentColor,
+                action: playCollection
             )
 
             if model.kind == .playlist || model.kind == .release {
@@ -137,13 +154,15 @@ struct CollectionDetailScreen: View {
                 CollectionSecondaryActionButton(
                     titleKey: "collection.add_track",
                     systemImage: "plus",
-                    accessibilityKey: "collection.add_track"
+                    accessibilityKey: "collection.add_track",
+                    action: { showsFileImporter = true }
                 )
 
                 CollectionSecondaryActionButton(
                     titleKey: "collection.open_folder",
                     systemImage: "folder",
-                    accessibilityKey: "collection.open_folder_accessibility"
+                    accessibilityKey: "collection.open_folder_accessibility",
+                    action: { showsFileImporter = true }
                 )
             }
         case .playlist:
@@ -186,22 +205,36 @@ struct CollectionDetailScreen: View {
             .foregroundStyle(.white)
             .padding(.bottom, 10)
 
-            ForEach(model.tracks) { track in
+            ForEach(Array(displayedTracks.enumerated()), id: \.element.id) { index, track in
                 CollectionTrackRow(
                     track: track,
                     kind: model.kind,
                     isEditing: isEditing,
                     isCurrent: playback.currentTrack.id == track.id,
-                    onTap: { playback.play(track.playableTrack) }
+                    onTap: {
+                        playback.play(displayedTracks.map(\.playableTrack), startingAt: index)
+                    }
                 )
 
-                if track.id != model.tracks.last?.id {
+                if track.id != displayedTracks.last?.id {
                     Divider()
                         .overlay(.white.opacity(0.075))
                         .padding(.leading, isEditing ? 92 : 62)
                 }
             }
         }
+    }
+
+    private var offlineMetadata: String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return "\(localLibrary.tracks.count) · \(formatter.string(fromByteCount: localLibrary.totalBytes))"
+    }
+
+    private func playCollection() {
+        let tracks = displayedTracks.map(\.playableTrack)
+        guard !tracks.isEmpty else { return }
+        playback.play(tracks)
     }
 }
 
@@ -294,7 +327,7 @@ private struct PlaylistCollectionHero: View {
 
 private struct OfflineCollectionHero: View {
     let titleKey: String
-    let metadataKey: String
+    let metadataText: String
 
     var body: some View {
         VStack(spacing: 18) {
@@ -329,7 +362,7 @@ private struct OfflineCollectionHero: View {
                 Text(LocalizedStringKey(titleKey))
                     .font(.system(size: 26, weight: .bold, design: .rounded))
 
-                Text(LocalizedStringKey(metadataKey))
+                Text(verbatim: metadataText)
                     .font(.system(size: 14, weight: .medium, design: .rounded))
                     .foregroundStyle(.white.opacity(0.56))
             }
@@ -399,9 +432,10 @@ private struct CollectionHeroArtworkView: View {
 private struct PrimaryPlayButton: View {
     let isOffline: Bool
     let accent: Color
+    let action: () -> Void
 
     var body: some View {
-        Button(action: {}) {
+        Button(action: action) {
             Label("collection.play", systemImage: "play.fill")
                 .font(.system(size: 16, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white)
@@ -467,9 +501,10 @@ private struct CollectionSecondaryActionButton: View {
     let titleKey: LocalizedStringKey
     let systemImage: String
     let accessibilityKey: LocalizedStringKey
+    var action: () -> Void = {}
 
     var body: some View {
-        Button(action: {}) {
+        Button(action: action) {
             Label(titleKey, systemImage: systemImage)
                 .font(.system(size: 14, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white.opacity(0.86))
@@ -594,13 +629,15 @@ private struct CollectionTrackArtworkView: View {
 }
 
 private struct TrackOverflowMenu: View {
+    @EnvironmentObject private var playback: PlaybackCoordinator
+
     let track: CollectionTrackPreviewModel
     let kind: CollectionDetailKind
 
     var body: some View {
         Menu {
-            Button("collection.play_next", action: {})
-            Button("collection.add_to_queue", action: {})
+            Button("collection.play_next") { playback.playNext(track.playableTrack) }
+            Button("collection.add_to_queue") { playback.addToQueue(track.playableTrack) }
             Button("collection.add_to_playlist", action: {})
 
             if kind != .offline {
@@ -847,6 +884,32 @@ private struct CollectionTrackPreviewModel: Identifiable, Sendable {
     let artist: String
     let durationText: String
     let artwork: CollectionTrackArtwork
+    var fileURL: URL?
+
+    init(
+        id: String,
+        title: String,
+        artist: String,
+        durationText: String,
+        artwork: CollectionTrackArtwork,
+        fileURL: URL? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.artist = artist
+        self.durationText = durationText
+        self.artwork = artwork
+        self.fileURL = fileURL
+    }
+
+    init(playableTrack: PlayableTrack) {
+        id = playableTrack.id
+        title = playableTrack.title
+        artist = playableTrack.artist
+        durationText = Self.formattedDuration(playableTrack.durationSeconds)
+        artwork = .mistyLake
+        fileURL = playableTrack.fileURL
+    }
 
     var playableTrack: MockPlayableTrack {
         MockPlayableTrack(
@@ -854,8 +917,13 @@ private struct CollectionTrackPreviewModel: Identifiable, Sendable {
             title: title,
             artist: artist,
             durationSeconds: durationSeconds,
-            artworkName: artwork.assetName
+            artworkName: artwork.assetName,
+            fileURL: fileURL
         )
+    }
+
+    private static func formattedDuration(_ seconds: Int) -> String {
+        String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 
     private var durationSeconds: Int {
@@ -944,6 +1012,7 @@ private extension CollectionHeroArtwork {
         )
     }
     .environmentObject(MockPlaybackState())
+    .environmentObject(LocalMediaLibrary())
 }
 
 #Preview("Offline detail") {
@@ -951,4 +1020,5 @@ private extension CollectionHeroArtwork {
         CollectionDetailScreen(destination: .offline)
     }
     .environmentObject(MockPlaybackState())
+    .environmentObject(LocalMediaLibrary())
 }

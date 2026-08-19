@@ -1,8 +1,10 @@
 import SwiftUI
 
 struct LibraryView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selectedTab: AppTab = .player
-    @StateObject private var playback = MockPlaybackState()
+    @StateObject private var playback = PlaybackCoordinator()
+    @StateObject private var localLibrary = LocalMediaLibrary()
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -41,6 +43,18 @@ struct LibraryView: View {
         .toolbarBackground(.visible, for: .tabBar)
         .preferredColorScheme(.dark)
         .environmentObject(playback)
+        .environmentObject(localLibrary)
+        .task {
+            await localLibrary.scan()
+            playback.replaceLibrary(localLibrary.tracks)
+        }
+        .onChange(of: localLibrary.tracks) {
+            playback.replaceLibrary(localLibrary.tracks)
+        }
+        .onChange(of: scenePhase) {
+            guard scenePhase == .active else { return }
+            Task { await localLibrary.scan() }
+        }
     }
 }
 
@@ -77,11 +91,8 @@ private enum AppTab: Hashable {
 }
 
 private struct PlayerScreen: View {
-    @EnvironmentObject private var playback: MockPlaybackState
+    @EnvironmentObject private var playback: PlaybackCoordinator
 
-    @State private var isFavorite = false
-    @State private var isShuffleEnabled = false
-    @State private var progress = 0.41
     @State private var showsQueue = false
 
     var body: some View {
@@ -105,10 +116,6 @@ private struct PlayerScreen: View {
             }
         }
         .animation(.easeInOut(duration: 0.45), value: playback.currentTrack.id)
-        .onChange(of: playback.currentTrack.id) {
-            progress = 0.08
-            isFavorite = false
-        }
         .sheet(isPresented: $showsQueue) {
             PlaybackQueueScreen()
         }
@@ -237,11 +244,14 @@ private struct PlayerScreen: View {
 
     private var progressSection: some View {
         VStack(spacing: 8) {
-            PlayerProgressView(progress: $progress)
+            PlayerProgressView(
+                progress: playback.progress,
+                onSeek: playback.seek(toProgress:)
+            )
                 .frame(height: 18)
 
             HStack {
-                Text(verbatim: formattedTime(Int(Double(playback.currentTrack.durationSeconds) * progress)))
+                Text(verbatim: formattedTime(Int(playback.elapsedSeconds)))
                 Spacer()
                 Text(verbatim: formattedTime(playback.currentTrack.durationSeconds))
             }
@@ -253,10 +263,10 @@ private struct PlayerScreen: View {
     private var controls: some View {
         HStack(spacing: 0) {
             PlayerControlButton(
-                systemImage: isFavorite ? "heart.fill" : "heart",
-                accessibilityLabel: "player.favorite",
-                isActive: isFavorite,
-                action: { isFavorite.toggle() }
+                systemImage: "shuffle",
+                accessibilityLabel: "player.shuffle",
+                isActive: playback.isShuffleEnabled,
+                action: playback.toggleShuffle
             )
 
             Spacer()
@@ -293,10 +303,10 @@ private struct PlayerScreen: View {
             Spacer()
 
             PlayerControlButton(
-                systemImage: "shuffle",
-                accessibilityLabel: "player.shuffle",
-                isActive: isShuffleEnabled,
-                action: { isShuffleEnabled.toggle() }
+                systemImage: playback.repeatMode.systemImage,
+                accessibilityLabel: "player.repeat",
+                isActive: playback.repeatMode != .off,
+                action: playback.cycleRepeatMode
             )
         }
         .padding(.horizontal, 18)
@@ -348,7 +358,8 @@ private struct PlayerBackground: View {
 }
 
 private struct PlayerProgressView: View {
-    @Binding var progress: Double
+    let progress: Double
+    let onSeek: (Double) -> Void
 
     var body: some View {
         GeometryReader { geometry in
@@ -376,7 +387,7 @@ private struct PlayerProgressView: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        progress = min(max(value.location.x / width, 0), 1)
+                        onSeek(min(max(value.location.x / width, 0), 1))
                     }
             )
         }
