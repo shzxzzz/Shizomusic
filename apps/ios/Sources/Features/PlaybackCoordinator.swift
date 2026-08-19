@@ -3,6 +3,29 @@ import MediaPlayer
 import SwiftUI
 import UIKit
 
+private final class MediaArtworkBox: @unchecked Sendable {
+    let image: UIImage
+
+    init(image: UIImage) {
+        self.image = image
+    }
+}
+
+private func makeMediaItemArtwork(from image: UIImage) -> MPMediaItemArtwork? {
+    let size = image.size
+    guard size.width.isFinite,
+          size.height.isFinite,
+          size.width > 0,
+          size.height > 0 else { return nil }
+
+    // MediaPlayer invokes this handler on its own background queue. Keeping the
+    // closure outside PlaybackCoordinator prevents it from inheriting @MainActor.
+    // UIImage is immutable here and retained only for read-only artwork requests.
+    let box = MediaArtworkBox(image: image)
+    let requestHandler: @Sendable (CGSize) -> UIImage = { _ in box.image }
+    return MPMediaItemArtwork(boundsSize: size, requestHandler: requestHandler)
+}
+
 struct PlayableTrack: Identifiable, Hashable, Codable, Sendable {
     let id: String
     let title: String
@@ -487,10 +510,9 @@ final class PlaybackCoordinator: ObservableObject {
             MPNowPlayingInfoPropertyPlaybackQueueIndex: currentIndex ?? 0
         ]
         if let artworkURL = currentTrack.artworkURL,
-           let image = UIImage(contentsOfFile: artworkURL.path) {
-            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in
-                UIImage(contentsOfFile: artworkURL.path) ?? UIImage()
-            }
+           let image = UIImage(contentsOfFile: artworkURL.path),
+           let artwork = makeMediaItemArtwork(from: image) {
+            info[MPMediaItemPropertyArtwork] = artwork
         }
         nowPlayingSession.nowPlayingInfoCenter.nowPlayingInfo = info
 
