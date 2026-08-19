@@ -308,8 +308,8 @@ final class PlaybackCoordinator: ObservableObject {
         ) { [weak self] time in
             Task { @MainActor in
                 guard let self else { return }
-                elapsedSeconds = max(time.seconds.isFinite ? time.seconds : 0, 0)
-                updateNowPlaying()
+                self.elapsedSeconds = max(time.seconds.isFinite ? time.seconds : 0, 0)
+                self.updateNowPlaying()
             }
         }
 
