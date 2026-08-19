@@ -84,8 +84,7 @@ private struct QueueTrackRow: View {
                     .accessibilityHidden(true)
             }
 
-            Image(track.artworkName)
-                .resizable()
+            TrackArtworkView(artworkURL: track.artworkURL, fallbackName: track.artworkName)
                 .scaledToFill()
                 .frame(width: 48, height: 48)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))

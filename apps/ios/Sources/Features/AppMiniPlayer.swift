@@ -9,8 +9,10 @@ struct AppMiniPlayer: View {
         HStack(spacing: 9) {
             Button(action: onOpenPlayer) {
                 HStack(spacing: 10) {
-                    Image(playback.currentTrack.artworkName)
-                        .resizable()
+                    TrackArtworkView(
+                        artworkURL: playback.currentTrack.artworkURL,
+                        fallbackName: playback.currentTrack.artworkName
+                    )
                         .scaledToFill()
                         .frame(width: 44, height: 44)
                         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))

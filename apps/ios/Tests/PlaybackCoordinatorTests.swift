@@ -65,4 +65,27 @@ struct PlaybackCoordinatorTests {
 
         #expect(playback.upcomingTracks.first == inserted)
     }
+
+    @Test @MainActor
+    func shuffleChangesFutureQueueWithoutMovingCurrentTrack() {
+        let tracks = (1...5).map {
+            PlayableTrack(
+                id: "shuffle-\($0)",
+                title: "Track \($0)",
+                artist: "Artist",
+                durationSeconds: 60,
+                artworkName: "MistyLake"
+            )
+        }
+        let playback = PlaybackCoordinator()
+
+        playback.play(tracks)
+        let originalUpcoming = playback.upcomingTracks
+        playback.toggleShuffle()
+
+        #expect(playback.currentTrack == tracks[0])
+        #expect(playback.isShuffleEnabled)
+        #expect(playback.upcomingTracks != originalUpcoming)
+        #expect(Set(playback.upcomingTracks) == Set(originalUpcoming))
+    }
 }

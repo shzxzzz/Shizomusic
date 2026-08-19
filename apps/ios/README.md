@@ -12,6 +12,11 @@ ShizoMusic → Music**, then return to the application. The directory is rescann
 whenever the app becomes active. Files can also be copied into the same managed
 directory with **Library → Offline → Add track**.
 
+After changing `project.yml`, regenerate the project with `xcodegen generate`.
+The generated `Sources/App/Info.plist` contains the required `audio` background
+mode and Files sharing keys; opening an older generated `.xcodeproj` won’t pick up
+those capabilities.
+
 `PlaybackCoordinator` is the single owner of `AVPlayer`, the persisted queue and
 playback state. It handles seeking, previous/next history, shuffle, repeat-one/all,
 background audio, interruptions, headphone removal and Control Center commands.

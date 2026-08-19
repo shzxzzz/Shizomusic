@@ -1,6 +1,7 @@
 import AVFoundation
 import MediaPlayer
 import SwiftUI
+import UIKit
 
 struct PlayableTrack: Identifiable, Hashable, Codable, Sendable {
     let id: String
@@ -8,6 +9,7 @@ struct PlayableTrack: Identifiable, Hashable, Codable, Sendable {
     let artist: String
     let durationSeconds: Int
     let artworkName: String
+    let artworkURL: URL?
     let fileURL: URL?
 
     init(
@@ -16,6 +18,7 @@ struct PlayableTrack: Identifiable, Hashable, Codable, Sendable {
         artist: String,
         durationSeconds: Int,
         artworkName: String,
+        artworkURL: URL? = nil,
         fileURL: URL? = nil
     ) {
         self.id = id
@@ -23,6 +26,7 @@ struct PlayableTrack: Identifiable, Hashable, Codable, Sendable {
         self.artist = artist
         self.durationSeconds = durationSeconds
         self.artworkName = artworkName
+        self.artworkURL = artworkURL
         self.fileURL = fileURL
     }
 
@@ -58,6 +62,11 @@ final class PlaybackCoordinator: ObservableObject {
     }
 
     private let player = AVPlayer()
+    private lazy var nowPlayingSession: MPNowPlayingSession = {
+        let session = MPNowPlayingSession(players: [self.player])
+        session.automaticallyPublishesNowPlayingInfo = false
+        return session
+    }()
     private var currentIndex: Int?
     private var history: [PlayableTrack] = []
     private var timeObserver: Any?
@@ -133,9 +142,18 @@ final class PlaybackCoordinator: ObservableObject {
 
     func play(_ tracks: [PlayableTrack], startingAt index: Int = 0) {
         guard tracks.indices.contains(index) else { return }
-        queue = tracks
         history.removeAll()
-        selectTrack(at: index, autoplay: true)
+        if isShuffleEnabled {
+            let selected = tracks[index]
+            let remaining = tracks.enumerated()
+                .filter { $0.offset != index }
+                .map(\.element)
+            queue = [selected] + shuffledEnsuringChange(remaining)
+            selectTrack(at: 0, autoplay: true)
+        } else {
+            queue = tracks
+            selectTrack(at: index, autoplay: true)
+        }
     }
 
     func togglePlayPause() {
@@ -149,6 +167,7 @@ final class PlaybackCoordinator: ObservableObject {
         }
         do {
             try AVAudioSession.sharedInstance().setActive(true)
+            nowPlayingSession.becomeActiveIfPossible(completion: nil)
             player.play()
             isPlaying = true
             updateNowPlaying()
@@ -210,10 +229,20 @@ final class PlaybackCoordinator: ObservableObject {
         isShuffleEnabled.toggle()
         guard isShuffleEnabled, let currentIndex, queue.indices.contains(currentIndex) else { return }
         let playedAndCurrent = Array(queue[...currentIndex])
-        var future = currentIndex + 1 < queue.count ? Array(queue[(currentIndex + 1)...]) : []
-        future.shuffle()
-        queue = playedAndCurrent + future
+        let future = currentIndex + 1 < queue.count ? Array(queue[(currentIndex + 1)...]) : []
+        let shuffledFuture = shuffledEnsuringChange(future)
+        queue = playedAndCurrent + shuffledFuture
         persistState()
+        updateNowPlaying()
+    }
+
+    private func shuffledEnsuringChange(_ tracks: [PlayableTrack]) -> [PlayableTrack] {
+        guard tracks.count > 1 else { return tracks }
+        var shuffled = tracks.shuffled()
+        if shuffled == tracks {
+            shuffled.append(shuffled.removeFirst())
+        }
+        return shuffled
     }
 
     func playNext(_ track: PlayableTrack) {
@@ -246,7 +275,7 @@ final class PlaybackCoordinator: ObservableObject {
         elapsedSeconds = 0
         isPlaying = false
         persistState()
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        nowPlayingSession.nowPlayingInfoCenter.nowPlayingInfo = nil
     }
 
     private func selectTrack(at index: Int, autoplay: Bool, recordHistory: Bool = true) {
@@ -276,8 +305,13 @@ final class PlaybackCoordinator: ObservableObject {
     private func advance(automatic: Bool) {
         guard let currentIndex, !queue.isEmpty else { return }
         if automatic, repeatMode == .one {
-            seek(to: 0)
-            resume()
+            player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
+                guard finished else { return }
+                Task { @MainActor in
+                    self?.elapsedSeconds = 0
+                    self?.resume()
+                }
+            }
             return
         }
 
@@ -373,7 +407,8 @@ final class PlaybackCoordinator: ObservableObject {
     }
 
     private func configureRemoteCommands() {
-        let center = MPRemoteCommandCenter.shared()
+        UIApplication.shared.beginReceivingRemoteControlEvents()
+        let center = nowPlayingSession.remoteCommandCenter
         center.playCommand.addTarget { [weak self] _ in
             Task { @MainActor in self?.resume() }
             return .success
@@ -440,13 +475,38 @@ final class PlaybackCoordinator: ObservableObject {
 
     private func updateNowPlaying() {
         guard currentTrack != .empty else { return }
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+        var info: [String: Any] = [
             MPMediaItemPropertyTitle: currentTrack.title,
             MPMediaItemPropertyArtist: currentTrack.artist,
             MPMediaItemPropertyPlaybackDuration: currentTrack.durationSeconds,
+            MPMediaItemPropertyMediaType: MPMediaType.music.rawValue,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsedSeconds,
-            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0,
+            MPNowPlayingInfoPropertyPlaybackQueueCount: queue.count,
+            MPNowPlayingInfoPropertyPlaybackQueueIndex: currentIndex ?? 0
         ]
+        if let artworkURL = currentTrack.artworkURL,
+           let image = UIImage(contentsOfFile: artworkURL.path) {
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in
+                UIImage(contentsOfFile: artworkURL.path) ?? UIImage()
+            }
+        }
+        nowPlayingSession.nowPlayingInfoCenter.nowPlayingInfo = info
+
+        let center = nowPlayingSession.remoteCommandCenter
+        center.playCommand.isEnabled = !isPlaying && currentTrack.fileURL != nil
+        center.pauseCommand.isEnabled = isPlaying
+        center.togglePlayPauseCommand.isEnabled = currentTrack.fileURL != nil
+        center.nextTrackCommand.isEnabled = !upcomingTracks.isEmpty || repeatMode == .all
+        center.previousTrackCommand.isEnabled = currentTrack.fileURL != nil
+        center.changePlaybackPositionCommand.isEnabled = currentTrack.durationSeconds > 0
+        center.changeRepeatModeCommand.currentRepeatType = switch repeatMode {
+        case .off: .off
+        case .all: .all
+        case .one: .one
+        }
+        center.changeShuffleModeCommand.currentShuffleType = isShuffleEnabled ? .items : .off
     }
 
     private struct PersistedState: Codable {

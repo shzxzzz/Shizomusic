@@ -25,6 +25,7 @@ struct CollectionDetailScreen: View {
     @State private var isCollectionLiked = false
     @State private var heroBottom: CGFloat = 1_000
     @State private var showsFileImporter = false
+    @State private var showsMusicFolder = false
 
     let destination: CollectionDetailDestination
 
@@ -109,6 +110,13 @@ struct CollectionDetailScreen: View {
             guard case let .success(urls) = result else { return }
             Task { await localLibrary.importFiles(urls) }
         }
+        .sheet(isPresented: $showsMusicFolder) {
+            MusicFolderBrowser(directoryURL: localLibrary.musicDirectory) { urls in
+                showsMusicFolder = false
+                Task { await localLibrary.importFiles(urls) }
+            }
+            .ignoresSafeArea()
+        }
     }
 
     @ViewBuilder
@@ -162,7 +170,7 @@ struct CollectionDetailScreen: View {
                     titleKey: "collection.open_folder",
                     systemImage: "folder",
                     accessibilityKey: "collection.open_folder_accessibility",
-                    action: { showsFileImporter = true }
+                    action: { showsMusicFolder = true }
                 )
             }
         case .playlist:
@@ -543,7 +551,17 @@ private struct CollectionTrackRow: View {
                 }
             } label: {
                 HStack(spacing: 10) {
-                    CollectionTrackArtworkView(style: track.artwork)
+                    Group {
+                        if let artworkURL = track.artworkURL {
+                            TrackArtworkView(
+                                artworkURL: artworkURL,
+                                fallbackName: track.artwork.assetName
+                            )
+                            .scaledToFill()
+                        } else {
+                            CollectionTrackArtworkView(style: track.artwork)
+                        }
+                    }
                         .frame(width: 48, height: 48)
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
@@ -884,6 +902,7 @@ private struct CollectionTrackPreviewModel: Identifiable, Sendable {
     let artist: String
     let durationText: String
     let artwork: CollectionTrackArtwork
+    var artworkURL: URL?
     var fileURL: URL?
 
     init(
@@ -892,6 +911,7 @@ private struct CollectionTrackPreviewModel: Identifiable, Sendable {
         artist: String,
         durationText: String,
         artwork: CollectionTrackArtwork,
+        artworkURL: URL? = nil,
         fileURL: URL? = nil
     ) {
         self.id = id
@@ -899,6 +919,7 @@ private struct CollectionTrackPreviewModel: Identifiable, Sendable {
         self.artist = artist
         self.durationText = durationText
         self.artwork = artwork
+        self.artworkURL = artworkURL
         self.fileURL = fileURL
     }
 
@@ -908,6 +929,7 @@ private struct CollectionTrackPreviewModel: Identifiable, Sendable {
         artist = playableTrack.artist
         durationText = Self.formattedDuration(playableTrack.durationSeconds)
         artwork = .mistyLake
+        artworkURL = playableTrack.artworkURL
         fileURL = playableTrack.fileURL
     }
 
@@ -918,6 +940,7 @@ private struct CollectionTrackPreviewModel: Identifiable, Sendable {
             artist: artist,
             durationSeconds: durationSeconds,
             artworkName: artwork.assetName,
+            artworkURL: artworkURL,
             fileURL: fileURL
         )
     }

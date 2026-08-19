@@ -9,13 +9,19 @@ final class LocalMediaLibrary: ObservableObject {
     @Published private(set) var errorMessage: String?
 
     let musicDirectory: URL
+    private let artworkDirectory: URL
 
     private nonisolated static let supportedExtensions = Set(["mp3", "flac", "m4a", "aac", "wav"])
 
     init(fileManager: FileManager = .default) {
         let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
         musicDirectory = documents.appendingPathComponent("Music", isDirectory: true)
+        let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        artworkDirectory = applicationSupport
+            .appendingPathComponent("ShizoMusic", isDirectory: true)
+            .appendingPathComponent("Artwork", isDirectory: true)
         try? fileManager.createDirectory(at: musicDirectory, withIntermediateDirectories: true)
+        try? fileManager.createDirectory(at: artworkDirectory, withIntermediateDirectories: true)
     }
 
     var totalBytes: Int64 {
@@ -32,9 +38,10 @@ final class LocalMediaLibrary: ObservableObject {
         defer { isScanning = false }
 
         let directory = musicDirectory
+        let artworkDirectory = self.artworkDirectory
         do {
             tracks = try await Task.detached(priority: .userInitiated) {
-                try await Self.scanDirectory(directory)
+                try await Self.scanDirectory(directory, artworkDirectory: artworkDirectory)
             }.value
             errorMessage = nil
         } catch {
@@ -47,6 +54,7 @@ final class LocalMediaLibrary: ObservableObject {
         isScanning = true
         defer { isScanning = false }
         let directory = musicDirectory
+        let artworkDirectory = self.artworkDirectory
 
         do {
             try await Task.detached(priority: .userInitiated) {
@@ -75,7 +83,7 @@ final class LocalMediaLibrary: ObservableObject {
                 }
             }.value
             tracks = try await Task.detached(priority: .userInitiated) {
-                try await Self.scanDirectory(directory)
+                try await Self.scanDirectory(directory, artworkDirectory: artworkDirectory)
             }.value
             errorMessage = nil
         } catch {
@@ -83,7 +91,10 @@ final class LocalMediaLibrary: ObservableObject {
         }
     }
 
-    private nonisolated static func scanDirectory(_ directory: URL) async throws -> [PlayableTrack] {
+    private nonisolated static func scanDirectory(
+        _ directory: URL,
+        artworkDirectory: URL
+    ) async throws -> [PlayableTrack] {
         let urls = try audioFiles(in: directory)
         var result: [PlayableTrack] = []
         result.reserveCapacity(urls.count)
@@ -94,18 +105,25 @@ final class LocalMediaLibrary: ObservableObject {
                 guard asset.isPlayable else { continue }
                 let duration = try await asset.load(.duration)
                 let metadata = try await asset.load(.commonMetadata)
+                let identifier = try sha256(url)
                 let title = await metadataValue(.commonIdentifierTitle, in: metadata)
                     ?? url.deletingPathExtension().lastPathComponent
                 let artist = await metadataValue(.commonIdentifierArtist, in: metadata)
                     ?? String(localized: "library.unknown_artist")
                 let seconds = duration.seconds.isFinite ? max(Int(duration.seconds.rounded()), 0) : 0
+                let artworkURL = await cachedArtwork(
+                    identifier: identifier,
+                    metadata: metadata,
+                    directory: artworkDirectory
+                )
                 result.append(
                     PlayableTrack(
-                        id: try sha256(url),
+                        id: identifier,
                         title: title,
                         artist: artist,
                         durationSeconds: seconds,
                         artworkName: "MistyLake",
+                        artworkURL: artworkURL,
                         fileURL: url
                     )
                 )
@@ -146,6 +164,27 @@ final class LocalMediaLibrary: ObservableObject {
               let value = try? await item.load(.stringValue) else { return nil }
         let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return normalized.isEmpty ? nil : normalized
+    }
+
+    private nonisolated static func cachedArtwork(
+        identifier: String,
+        metadata: [AVMetadataItem],
+        directory: URL
+    ) async -> URL? {
+        let destination = directory.appendingPathComponent("\(identifier).image")
+        if FileManager.default.fileExists(atPath: destination.path) { return destination }
+        guard let item = AVMetadataItem.metadataItems(
+            from: metadata,
+            filteredByIdentifier: .commonIdentifierArtwork
+        ).first,
+              let data = try? await item.load(.dataValue),
+              !data.isEmpty else { return nil }
+        do {
+            try data.write(to: destination, options: .atomic)
+            return destination
+        } catch {
+            return nil
+        }
     }
 
     private nonisolated static func sha256(_ url: URL) throws -> String {

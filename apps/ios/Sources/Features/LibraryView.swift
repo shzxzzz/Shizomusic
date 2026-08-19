@@ -97,7 +97,10 @@ private struct PlayerScreen: View {
 
     var body: some View {
         ZStack {
-            PlayerBackground(artworkName: playback.currentTrack.artworkName)
+            PlayerBackground(
+                artworkName: playback.currentTrack.artworkName,
+                artworkURL: playback.currentTrack.artworkURL
+            )
 
             GeometryReader { geometry in
                 let compactLayout = geometry.size.height < 700
@@ -207,12 +210,14 @@ private struct PlayerScreen: View {
 
     private func albumArtwork(size: CGFloat) -> some View {
         ZStack {
-            Image(playback.currentTrack.artworkName)
-                .resizable()
+            TrackArtworkView(
+                artworkURL: playback.currentTrack.artworkURL,
+                fallbackName: playback.currentTrack.artworkName
+            )
                 .scaledToFill()
                 .frame(width: size, height: size)
                 .clipped()
-                .id(playback.currentTrack.artworkName)
+                .id(playback.currentTrack.artworkURL?.absoluteString ?? playback.currentTrack.artworkName)
                 .transition(.opacity.combined(with: .scale(scale: 0.985)))
         }
         .frame(width: size, height: size)
@@ -328,17 +333,17 @@ private struct PlayerScreen: View {
 
 private struct PlayerBackground: View {
     let artworkName: String
+    let artworkURL: URL?
 
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                Image(artworkName)
-                    .resizable()
+                TrackArtworkView(artworkURL: artworkURL, fallbackName: artworkName)
                     .scaledToFill()
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .scaleEffect(1.16)
                     .blur(radius: 52)
-                    .id(artworkName)
+                    .id(artworkURL?.absoluteString ?? artworkName)
                     .transition(.opacity)
 
                 Color(red: 0.34, green: 0.43, blue: 0.49)
@@ -407,7 +412,7 @@ private struct PlayerControlButton: View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: 19, weight: .semibold))
-                .foregroundStyle(isActive ? .white : .white.opacity(0.84))
+                .foregroundStyle(isActive ? Color.cyan : Color.white.opacity(0.84))
                 .frame(width: 34, height: 48)
         }
         .buttonStyle(.plain)
