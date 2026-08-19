@@ -13,7 +13,7 @@ struct MusicFolderBrowser: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
         let picker = UIDocumentPickerViewController(
-            forOpeningContentTypes: [.audio],
+            forOpeningContentTypes: [.audio, .data],
             asCopy: false
         )
         picker.directoryURL = directoryURL

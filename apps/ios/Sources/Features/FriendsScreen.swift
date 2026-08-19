@@ -1,20 +1,20 @@
 import SwiftUI
 
-struct FriendsScreenPreviewState: Sendable {
+struct FriendsScreenState: Sendable {
     var searchQuery: String
-    var friends: [FriendPreviewModel]
+    var friends: [FriendModel]
 
-    static let populated = FriendsScreenPreviewState(
+    static let populated = FriendsScreenState(
         searchQuery: "",
-        friends: FriendPreviewModel.samples
+        friends: FriendModel.samples
     )
 
-    static let empty = FriendsScreenPreviewState(searchQuery: "", friends: [])
+    static let empty = FriendsScreenState(searchQuery: "", friends: [])
 
-    static let nobodyOnline = FriendsScreenPreviewState(
+    static let nobodyOnline = FriendsScreenState(
         searchQuery: "",
-        friends: FriendPreviewModel.samples.map {
-            FriendPreviewModel(
+        friends: FriendModel.samples.map {
+            FriendModel(
                 id: $0.id,
                 displayName: $0.displayName,
                 avatarStyle: $0.avatarStyle,
@@ -24,20 +24,19 @@ struct FriendsScreenPreviewState: Sendable {
         }
     )
 
-    static let noSearchResults = FriendsScreenPreviewState(
+    static let noSearchResults = FriendsScreenState(
         searchQuery: "Zoe",
-        friends: FriendPreviewModel.samples
+        friends: FriendModel.samples
     )
 }
-
 struct FriendsScreen: View {
-    @State private var state: FriendsScreenPreviewState
+    @State private var state: FriendsScreenState
     @State private var path: [FriendProfileDestination] = []
 
     private let onFriendTapped: (String) -> Void
 
     init(
-        state: FriendsScreenPreviewState = .populated,
+        state: FriendsScreenState = .populated,
         onFriendTapped: @escaping (String) -> Void = { _ in }
     ) {
         _state = State(initialValue: state)
@@ -48,7 +47,7 @@ struct FriendsScreen: View {
         state.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var onlineFriends: [FriendPreviewModel] {
+    private var onlineFriends: [FriendModel] {
         state.friends
             .filter(\.isOnline)
             .sorted { lhs, rhs in
@@ -59,13 +58,13 @@ struct FriendsScreen: View {
             }
     }
 
-    private var offlineFriends: [FriendPreviewModel] {
+    private var offlineFriends: [FriendModel] {
         state.friends
             .filter { !$0.isOnline }
             .sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
     }
 
-    private var filteredFriends: [FriendPreviewModel] {
+    private var filteredFriends: [FriendModel] {
         state.friends
             .filter { $0.displayName.localizedCaseInsensitiveContains(trimmedQuery) }
             .sorted { lhs, rhs in
@@ -134,7 +133,7 @@ struct FriendsScreen: View {
         .preferredColorScheme(.dark)
     }
 
-    private func openFriend(_ friend: FriendPreviewModel) {
+    private func openFriend(_ friend: FriendModel) {
         onFriendTapped(friend.id)
         path.append(FriendProfileDestination(id: friend.id, displayName: friend.displayName))
     }
@@ -142,8 +141,8 @@ struct FriendsScreen: View {
 
 struct FriendsSection: View {
     let titleKey: LocalizedStringKey
-    let friends: [FriendPreviewModel]
-    let onTap: (FriendPreviewModel) -> Void
+    let friends: [FriendModel]
+    let onTap: (FriendModel) -> Void
 
     var body: some View {
         Section {
@@ -159,7 +158,7 @@ struct FriendsSection: View {
 }
 
 struct FriendRow: View {
-    let friend: FriendPreviewModel
+    let friend: FriendModel
     let onTap: () -> Void
 
     var body: some View {
@@ -206,7 +205,7 @@ struct FriendRow: View {
 }
 
 struct FriendPresenceIndicator: View {
-    let friend: FriendPreviewModel
+    let friend: FriendModel
 
     var body: some View {
         if friend.isOnline {
@@ -227,7 +226,7 @@ struct FriendPresenceIndicator: View {
 }
 
 struct FriendAvatar: View {
-    let friend: FriendPreviewModel
+    let friend: FriendModel
 
     var body: some View {
         ZStack {
@@ -328,7 +327,7 @@ enum FriendAvatarStyle: Hashable, Sendable {
     case neutral
 }
 
-struct FriendPreviewModel: Identifiable, Hashable, Sendable {
+struct FriendModel: Identifiable, Hashable, Sendable {
     let id: String
     let displayName: String
     let avatarStyle: FriendAvatarStyle
@@ -340,14 +339,14 @@ struct FriendPreviewModel: Identifiable, Hashable, Sendable {
     }
 
     static let samples = [
-        FriendPreviewModel(id: "alex", displayName: "Alex", avatarStyle: .image("ArtistHero"), isOnline: true, isListening: true),
-        FriendPreviewModel(id: "nikita", displayName: "Nikita", avatarStyle: .image("AuroraShore"), isOnline: true, isListening: true),
-        FriendPreviewModel(id: "max", displayName: "Max", avatarStyle: .violet, isOnline: true, isListening: false),
-        FriendPreviewModel(id: "kate", displayName: "Kate", avatarStyle: .image("MistyLake"), isOnline: true, isListening: false),
-        FriendPreviewModel(id: "dima", displayName: "Dima", avatarStyle: .amber, isOnline: false, isListening: false),
-        FriendPreviewModel(id: "misha", displayName: "Misha", avatarStyle: .neutral, isOnline: false, isListening: false),
-        FriendPreviewModel(id: "anna", displayName: "Anna", avatarStyle: .image("AuroraShore"), isOnline: false, isListening: false),
-        FriendPreviewModel(id: "roman", displayName: "Roman", avatarStyle: .neutral, isOnline: false, isListening: false)
+        FriendModel(id: "alex", displayName: "Alex", avatarStyle: .image("ArtistHero"), isOnline: true, isListening: true),
+        FriendModel(id: "nikita", displayName: "Nikita", avatarStyle: .image("AuroraShore"), isOnline: true, isListening: true),
+        FriendModel(id: "max", displayName: "Max", avatarStyle: .violet, isOnline: true, isListening: false),
+        FriendModel(id: "kate", displayName: "Kate", avatarStyle: .image("MistyLake"), isOnline: true, isListening: false),
+        FriendModel(id: "dima", displayName: "Dima", avatarStyle: .amber, isOnline: false, isListening: false),
+        FriendModel(id: "misha", displayName: "Misha", avatarStyle: .neutral, isOnline: false, isListening: false),
+        FriendModel(id: "anna", displayName: "Anna", avatarStyle: .image("AuroraShore"), isOnline: false, isListening: false),
+        FriendModel(id: "roman", displayName: "Roman", avatarStyle: .neutral, isOnline: false, isListening: false)
     ]
 }
 

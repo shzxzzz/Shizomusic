@@ -88,4 +88,47 @@ struct PlaybackCoordinatorTests {
         #expect(playback.upcomingTracks != originalUpcoming)
         #expect(Set(playback.upcomingTracks) == Set(originalUpcoming))
     }
+
+    @Test @MainActor
+    func historyIsSeparateFromUpcomingQueue() {
+        let tracks = makeTracks(3, prefix: "history")
+        let playback = PlaybackCoordinator()
+
+        playback.play(tracks)
+        playback.next()
+
+        #expect(playback.currentTrack == tracks[1])
+        #expect(playback.playbackHistory == [tracks[0]])
+        #expect(playback.upcomingTracks == [tracks[2]])
+
+        playback.previous()
+        #expect(playback.currentTrack == tracks[0])
+        #expect(playback.playbackHistory.isEmpty)
+    }
+
+    @Test @MainActor
+    func upcomingItemsCanBeRemovedAndCleared() {
+        let tracks = makeTracks(4, prefix: "remove")
+        let playback = PlaybackCoordinator()
+
+        playback.play(tracks)
+        playback.removeUpcoming(atOffsets: IndexSet(integer: 1))
+        #expect(playback.upcomingTracks == [tracks[1], tracks[3]])
+
+        playback.clearUpcoming()
+        #expect(playback.upcomingTracks.isEmpty)
+        #expect(playback.currentTrack == tracks[0])
+    }
+
+    private func makeTracks(_ count: Int, prefix: String) -> [PlayableTrack] {
+        (1...count).map {
+            PlayableTrack(
+                id: "\(prefix)-\($0)",
+                title: "Track \($0)",
+                artist: "Artist",
+                durationSeconds: 60,
+                artworkName: "MistyLake"
+            )
+        }
+    }
 }

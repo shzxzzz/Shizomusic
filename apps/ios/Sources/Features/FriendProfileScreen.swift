@@ -3,7 +3,7 @@ import SwiftUI
 struct FriendProfileScreen: View {
     @Environment(\.dismiss) private var dismiss
 
-    @State private var state: FriendProfilePreviewState
+    @State private var state: FriendProfileState
     @State private var heroBottom: CGFloat = 1_000
     @State private var showsSuggestionSheet = false
     @State private var noticeKey: String?
@@ -12,10 +12,10 @@ struct FriendProfileScreen: View {
 
     init(
         destination: FriendProfileDestination,
-        previewState: FriendProfilePreviewState? = nil,
+        initialState: FriendProfileState? = nil,
         actions: FriendProfileActions = FriendProfileActions()
     ) {
-        _state = State(initialValue: previewState ?? .make(for: destination))
+        _state = State(initialValue: initialState ?? .make(for: destination))
         self.actions = actions
     }
 
@@ -125,14 +125,13 @@ struct FriendProfileScreen: View {
         state.syncState = .disconnected
     }
 }
-
 private struct FriendProfileHero: View {
-    let state: FriendProfilePreviewState
+    let state: FriendProfileState
     let onBack: () -> Void
     let onMenuAction: (String) -> Void
 
-    private var friend: FriendPreviewModel {
-        FriendPreviewModel(
+    private var friend: FriendModel {
+        FriendModel(
             id: state.id,
             displayName: state.displayName,
             avatarStyle: state.avatarStyle,
@@ -236,7 +235,7 @@ private struct FriendProfileSegmentedControl: View {
 }
 
 private struct FriendNowPlayingContent: View {
-    let state: FriendProfilePreviewState
+    let state: FriendProfileState
     let onCurrentTrackTapped: () -> Void
     let onConnect: () -> Void
     let onDisconnect: () -> Void
@@ -272,7 +271,7 @@ private struct FriendNowPlayingContent: View {
 }
 
 private struct FriendCurrentTrackCard: View {
-    let track: FriendCurrentTrackPreview
+    let track: FriendCurrentTrack
     let onTap: () -> Void
 
     var body: some View {
@@ -321,7 +320,7 @@ private struct FriendCurrentTrackCard: View {
 }
 
 private struct FriendConnectedStatus: View {
-    let syncState: FriendSyncPreviewState
+    let syncState: FriendSyncState
     let onDisconnect: () -> Void
 
     var body: some View {
@@ -356,7 +355,7 @@ private struct FriendConnectedStatus: View {
 }
 
 private struct FriendQueueContent: View {
-    let state: FriendProfilePreviewState
+    let state: FriendProfileState
     let onTrackTapped: (String) -> Void
     let onSuggest: () -> Void
 
@@ -406,7 +405,7 @@ private struct FriendQueueContent: View {
 }
 
 private struct FriendQueueCurrentRow: View {
-    let track: FriendCurrentTrackPreview
+    let track: FriendCurrentTrack
 
     var body: some View {
         HStack(spacing: 12) {
@@ -437,7 +436,7 @@ private struct FriendQueueCurrentRow: View {
 
 private struct FriendQueueRow: View {
     let index: Int
-    let track: FriendQueueItemPreview
+    let track: FriendQueueItem
     let onTap: () -> Void
 
     var body: some View {
@@ -476,7 +475,7 @@ private struct FriendQueueRow: View {
 
 private struct FriendSavedContentSection: View {
     let displayName: String
-    let items: [FriendSavedPreview]
+    let items: [FriendSavedItem]
     let actions: FriendProfileActions
 
     var body: some View {
@@ -502,7 +501,7 @@ private struct FriendSavedContentSection: View {
 }
 
 private struct FriendSavedRow: View {
-    let item: FriendSavedPreview
+    let item: FriendSavedItem
 
     var body: some View {
         HStack(spacing: 11) {
@@ -523,7 +522,7 @@ private struct FriendSavedRow: View {
 
             HStack(spacing: -7) {
                 ForEach(Array(item.artworkNames.prefix(3).enumerated()), id: \.offset) { _, name in
-                    artworkPreview(name: name)
+                    artworkView(name: name)
                 }
             }
 
@@ -542,8 +541,8 @@ private struct FriendSavedRow: View {
     }
 
     @ViewBuilder
-    private func artworkPreview(name: String) -> some View {
-        if item.kind.usesCircularPreviews {
+    private func artworkView(name: String) -> some View {
+        if item.kind.usesCircularArtwork {
             Image(name)
                 .resizable()
                 .scaledToFill()
@@ -686,15 +685,15 @@ private struct FriendSavedPlaceholderView: View {
 private struct FriendTrackSuggestionSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
-    @State private var selectedTrack: FriendSuggestionTrackPreview?
+    @State private var selectedTrack: FriendSuggestionTrack?
 
     let displayName: String
-    let onConfirm: (FriendSuggestionTrackPreview) -> Void
+    let onConfirm: (FriendSuggestionTrack) -> Void
 
-    private var tracks: [FriendSuggestionTrackPreview] {
+    private var tracks: [FriendSuggestionTrack] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return FriendSuggestionTrackPreview.samples }
-        return FriendSuggestionTrackPreview.samples.filter {
+        guard !trimmed.isEmpty else { return FriendSuggestionTrack.samples }
+        return FriendSuggestionTrack.samples.filter {
             $0.title.localizedCaseInsensitiveContains(trimmed)
                 || $0.artistName.localizedCaseInsensitiveContains(trimmed)
         }
@@ -788,27 +787,27 @@ private struct FriendProfileHeroBottomKey: PreferenceKey {
     NavigationStack {
         FriendProfileScreen(
             destination: FriendProfileDestination(id: "alex", displayName: "Alex"),
-            previewState: .onlineListening
+            initialState: .onlineListening
         )
     }
 }
 
 #Preview("Friend connected") {
-    FriendProfileScreen(destination: FriendProfileDestination(id: "alex", displayName: "Alex"), previewState: .connected)
+    FriendProfileScreen(destination: FriendProfileDestination(id: "alex", displayName: "Alex"), initialState: .connected)
 }
 
 #Preview("Friend queue") {
-    FriendProfileScreen(destination: FriendProfileDestination(id: "alex", displayName: "Alex"), previewState: .queueTab)
+    FriendProfileScreen(destination: FriendProfileDestination(id: "alex", displayName: "Alex"), initialState: .queueTab)
 }
 
 #Preview("Friend idle") {
-    FriendProfileScreen(destination: FriendProfileDestination(id: "kate", displayName: "Kate"), previewState: .onlineIdle)
+    FriendProfileScreen(destination: FriendProfileDestination(id: "kate", displayName: "Kate"), initialState: .onlineIdle)
 }
 
 #Preview("Friend offline") {
-    FriendProfileScreen(destination: FriendProfileDestination(id: "dima", displayName: "Dima"), previewState: .offline)
+    FriendProfileScreen(destination: FriendProfileDestination(id: "dima", displayName: "Dima"), initialState: .offline)
 }
 
 #Preview("Friend reconnecting") {
-    FriendProfileScreen(destination: FriendProfileDestination(id: "alex", displayName: "Alex"), previewState: .reconnecting)
+    FriendProfileScreen(destination: FriendProfileDestination(id: "alex", displayName: "Alex"), initialState: .reconnecting)
 }

@@ -2,7 +2,7 @@ import SwiftUI
 
 struct PlaybackQueueScreen: View {
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var playback: MockPlaybackState
+    @EnvironmentObject private var playback: PlaybackCoordinator
 
     var body: some View {
         NavigationStack {
@@ -30,6 +30,15 @@ struct PlaybackQueueScreen: View {
                             )
                         }
                         .onMove(perform: playback.moveUpcoming)
+                        .onDelete(perform: playback.removeUpcoming)
+                    }
+                }
+
+                if !playback.playbackHistory.isEmpty {
+                    Section("queue.history") {
+                        ForEach(playback.playbackHistory.reversed()) { track in
+                            QueueTrackRow(track: track, isCurrent: false, onTap: { playback.play(track) })
+                        }
                     }
                 }
             }
@@ -40,6 +49,11 @@ struct PlaybackQueueScreen: View {
             .navigationTitle("queue.title")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    if !playback.upcomingTracks.isEmpty {
+                        Button("queue.clear", role: .destructive) { playback.clearUpcoming() }
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("queue.done") { dismiss() }
                 }
@@ -52,7 +66,7 @@ struct PlaybackQueueScreen: View {
 }
 
 private struct QueueTrackRow: View {
-    let track: MockPlayableTrack
+    let track: PlayableTrack
     let isCurrent: Bool
     let onTap: (() -> Void)?
 
@@ -134,5 +148,5 @@ private struct QueueBackground: View {
 
 #Preview("Playback queue") {
     PlaybackQueueScreen()
-        .environmentObject(MockPlaybackState())
+        .environmentObject(PlaybackCoordinator())
 }

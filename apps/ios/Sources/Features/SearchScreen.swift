@@ -1,12 +1,7 @@
 import SwiftUI
 
 enum SearchCategory: String, CaseIterable, Hashable, Sendable {
-    case all
-    case tracks
-    case artists
-    case releases
-    case playlists
-
+    case all, tracks, artists, releases, playlists
     var titleKey: LocalizedStringKey {
         switch self {
         case .all: "search.category_all"
@@ -18,226 +13,66 @@ enum SearchCategory: String, CaseIterable, Hashable, Sendable {
     }
 }
 
-enum SearchPreviewScenario: Hashable, Sendable {
-    case idle
-    case results
-    case loading
-    case providerError
-    case empty
-    case offlineEmpty
-}
-
-@MainActor
-final class MockSearchViewModel: ObservableObject {
-    @Published var query: String
-    @Published var selectedCategory: SearchCategory = .all
-    @Published private(set) var scenario: SearchPreviewScenario
-    @Published private(set) var recentQueries = ["Skrillex", "ambient focus", "In Rainbows"]
-
-    init(scenario: SearchPreviewScenario = .idle) {
-        self.scenario = scenario
-        self.query = scenario == .idle ? "" : "Skrillex"
-    }
-
-    var hasQuery: Bool {
-        !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    func queryDidChange() {
-        if hasQuery {
-            if scenario == .idle || scenario == .empty || scenario == .offlineEmpty {
-                scenario = .results
-            }
-        } else {
-            scenario = .idle
-            selectedCategory = .all
-        }
-    }
-
-    func submitSearch() {
-        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty else { return }
-        recentQueries.removeAll { $0.localizedCaseInsensitiveCompare(normalized) == .orderedSame }
-        recentQueries.insert(normalized, at: 0)
-        scenario = .results
-    }
-
-    func useRecent(_ value: String) {
-        query = value
-        scenario = .results
-        selectedCategory = .all
-    }
-
-    func clearQuery() {
-        query = ""
-        queryDidChange()
-    }
-
-    func clearRecent() {
-        recentQueries.removeAll()
-    }
-}
-
 struct SearchScreen: View {
-    @EnvironmentObject private var playback: MockPlaybackState
-    @StateObject private var viewModel: MockSearchViewModel
+    @EnvironmentObject private var playback: PlaybackCoordinator
+    @EnvironmentObject private var localLibrary: LocalMediaLibrary
+    @State private var query = ""
+    @State private var category: SearchCategory = .all
 
-    init(scenario: SearchPreviewScenario = .idle) {
-        _viewModel = StateObject(wrappedValue: MockSearchViewModel(scenario: scenario))
+    private var tracks: [PlayableTrack] { localLibrary.searchTracks(query: query) }
+    private var artists: [LocalArtist] {
+        localLibrary.artists.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.tracks.contains(where: matches) }
     }
+    private var releases: [LocalRelease] {
+        localLibrary.releases.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.artist.localizedCaseInsensitiveContains(query) }
+    }
+    private var hasResults: Bool { !tracks.isEmpty || !artists.isEmpty || !releases.isEmpty }
 
     var body: some View {
         NavigationStack {
             ZStack {
                 SearchBackground()
-
                 ScrollView(showsIndicators: false) {
-                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                        Text("search.title")
-                            .font(.system(size: 30, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.top, 18)
-                            .padding(.bottom, 14)
-
-                        Section {
-                            content
-                                .padding(.horizontal, 16)
-                                .padding(.top, 20)
-                                .padding(.bottom, 34)
-                        } header: {
-                            SearchPinnedHeader(viewModel: viewModel)
-                        }
+                    LazyVStack(alignment: .leading, spacing: 20) {
+                        Text("search.title").font(.largeTitle.bold())
+                        SearchField(query: $query)
+                        SearchCategoryBar(selection: $category)
+                        if localLibrary.tracks.isEmpty {
+                            CatalogEmptyState(title: "search.local_empty_title", detail: "search.local_empty_detail", icon: "music.note.house")
+                        } else if !hasResults {
+                            CatalogEmptyState(title: "search.nothing_found", detail: "search.try_another_query", icon: "magnifyingglass")
+                        } else { results }
                     }
+                    .padding(.horizontal, 16).padding(.top, 18).padding(.bottom, 120)
                 }
             }
-            .navigationDestination(for: CollectionDetailDestination.self) { destination in
-                CollectionDetailScreen(destination: destination)
-            }
-            .navigationDestination(for: ArtistDetailDestination.self) { destination in
-                ArtistDetailScreen(destination: destination)
-            }
-            .navigationDestination(for: ArtistSectionDestination.self) { destination in
-                ArtistSectionListScreen(destination: destination)
-            }
+            .navigationDestination(for: CollectionDetailDestination.self) { CollectionDetailScreen(destination: $0) }
+            .navigationDestination(for: ArtistDetailDestination.self) { ArtistDetailScreen(destination: $0) }
             .toolbar(.hidden, for: .navigationBar)
         }
         .preferredColorScheme(.dark)
     }
 
-    @ViewBuilder
-    private var content: some View {
-        if !viewModel.hasQuery {
-            SearchRecentSection(
-                queries: viewModel.recentQueries,
-                onSelect: viewModel.useRecent,
-                onClear: viewModel.clearRecent
-            )
-        } else {
-            switch viewModel.scenario {
-            case .idle, .results, .loading, .providerError:
-                resultsContent
-            case .empty:
-                SearchEmptyState(isOffline: false)
-            case .offlineEmpty:
-                SearchEmptyState(isOffline: true)
-            }
-        }
-    }
-
-    private var resultsContent: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            if viewModel.scenario == .providerError {
-                SearchStatusBanner(kind: .providerError)
-            }
-
-            categoryContent
-
-            if viewModel.scenario == .loading {
-                SearchStatusBanner(kind: .loading)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var categoryContent: some View {
-        switch viewModel.selectedCategory {
+    @ViewBuilder private var results: some View {
+        switch category {
         case .all:
-            SearchAllResults(onPlayTrack: playTrack)
-        case .tracks:
-            SearchTracksResults(onPlayTrack: playTrack)
-        case .artists:
-            SearchArtistsResults()
-        case .releases:
-            SearchReleasesResults()
+            SearchArtistResults(artists: Array(artists.prefix(3)))
+            SearchTrackResults(tracks: Array(tracks.prefix(8)), onPlay: play)
+            SearchReleaseResults(releases: Array(releases.prefix(6)))
+        case .tracks: SearchTrackResults(tracks: tracks, onPlay: play)
+        case .artists: SearchArtistResults(artists: artists)
+        case .releases: SearchReleaseResults(releases: releases)
         case .playlists:
-            SearchPlaylistsResults()
+            CatalogEmptyState(title: "search.playlists_empty_title", detail: "search.playlists_empty_detail", icon: "music.note.list")
         }
     }
 
-    private func playTrack(_ track: SearchTrackPreview) {
-        playback.play(track.playableTrack)
+    private func matches(_ track: PlayableTrack) -> Bool {
+        track.title.localizedCaseInsensitiveContains(query) || track.artist.localizedCaseInsensitiveContains(query) || (track.albumTitle?.localizedCaseInsensitiveContains(query) ?? false)
     }
-}
 
-private struct SearchPinnedHeader: View {
-    @ObservedObject var viewModel: MockSearchViewModel
-
-    var body: some View {
-        VStack(spacing: 12) {
-            SearchField(
-                query: $viewModel.query,
-                onQueryChanged: viewModel.queryDidChange,
-                onSubmit: viewModel.submitSearch,
-                onClear: viewModel.clearQuery
-            )
-
-            if viewModel.hasQuery {
-                SearchCategoryBar(selection: $viewModel.selectedCategory)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-    }
-}
-
-private struct SearchRecentSection: View {
-    let queries: [String]
-    let onSelect: (String) -> Void
-    let onClear: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("search.recent")
-                    .font(.system(size: 19, weight: .bold, design: .rounded))
-                Spacer()
-                if !queries.isEmpty {
-                    Button("search.clear", action: onClear)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.52))
-                }
-            }
-
-            ForEach(queries, id: \.self) { query in
-                Button { onSelect(query) } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "clock.arrow.circlepath")
-                            .foregroundStyle(.white.opacity(0.42))
-                        Text(verbatim: query)
-                            .font(.system(size: 15, weight: .medium, design: .rounded))
-                        Spacer()
-                        Image(systemName: "arrow.up.left")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.35))
-                    }
-                    .foregroundStyle(.white)
-                    .frame(minHeight: 48)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
+    private func play(_ track: PlayableTrack) {
+        playback.play(tracks, startingAt: tracks.firstIndex(of: track) ?? 0)
     }
 }
 
@@ -246,32 +81,10 @@ private struct SearchBackground: View {
         ZStack {
             Color(red: 0.025, green: 0.028, blue: 0.038)
             RadialGradient(colors: [.purple.opacity(0.20), .clear], center: .topLeading, startRadius: 10, endRadius: 500)
-            RadialGradient(colors: [.cyan.opacity(0.07), .clear], center: .bottomTrailing, startRadius: 10, endRadius: 440)
-        }
-        .ignoresSafeArea()
+        }.ignoresSafeArea()
     }
 }
 
-#Preview("Search idle") {
-    SearchScreen(scenario: .idle).environmentObject(MockPlaybackState())
-}
-
-#Preview("Search results") {
-    SearchScreen(scenario: .results).environmentObject(MockPlaybackState())
-}
-
-#Preview("Search loading") {
-    SearchScreen(scenario: .loading).environmentObject(MockPlaybackState())
-}
-
-#Preview("Search provider error") {
-    SearchScreen(scenario: .providerError).environmentObject(MockPlaybackState())
-}
-
-#Preview("Search empty") {
-    SearchScreen(scenario: .empty).environmentObject(MockPlaybackState())
-}
-
-#Preview("Search offline empty") {
-    SearchScreen(scenario: .offlineEmpty).environmentObject(MockPlaybackState())
+#Preview("Local search") {
+    SearchScreen().environmentObject(PlaybackCoordinator()).environmentObject(LocalMediaLibrary())
 }

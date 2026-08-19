@@ -3,11 +3,11 @@ import SwiftUI
 
 struct MusicLibraryView: View {
     @EnvironmentObject private var localLibrary: LocalMediaLibrary
-    @State private var playlists = LibraryPlaylist.samples
+    @State private var playlists: [LibraryPlaylist] = []
     @State private var showsCreatePlaylist = false
 
-    private let releases = LibraryRelease.samples
-    private let topArtists = LibraryTopArtist.samples
+    private var releases: [LocalRelease] { localLibrary.releases }
+    private var topArtists: [LocalArtist] { localLibrary.artists.sorted { $0.durationSeconds > $1.durationSeconds } }
 
     var body: some View {
         NavigationStack {
@@ -17,6 +17,9 @@ struct MusicLibraryView: View {
                 ScrollView(showsIndicators: false) {
                     LazyVStack(alignment: .leading, spacing: 24) {
                         libraryHeader
+                        if let progress = localLibrary.progress {
+                            MediaLibraryProgressView(progress: progress)
+                        }
                         quickAccess
                         playlistsSection
                         releasesSection
@@ -141,7 +144,7 @@ struct MusicLibraryView: View {
                 spacing: 10
             ) {
                 ForEach(releases) { release in
-                    NavigationLink(value: release.detailDestination) {
+                    NavigationLink(value: CollectionDetailDestination.release(title: release.title, metadataKey: release.artist, artwork: .mistyLake)) {
                         ReleaseTile(release: release)
                     }
                     .buttonStyle(.plain)
@@ -159,9 +162,9 @@ struct MusicLibraryView: View {
                 .foregroundStyle(.white.opacity(0.48))
 
             VStack(spacing: 7) {
-                ForEach(topArtists) { artist in
-                    NavigationLink(value: artist.detailDestination) {
-                        TopArtistRow(artist: artist)
+                ForEach(Array(topArtists.enumerated()), id: \.element.id) { index, artist in
+                    NavigationLink(value: ArtistDetailDestination(name: artist.name)) {
+                        TopArtistRow(artist: artist, rank: index + 1)
                     }
                     .buttonStyle(.plain)
                 }
@@ -305,11 +308,11 @@ private struct PlaylistTile: View {
 }
 
 private struct ReleaseTile: View {
-    let release: LibraryRelease
+    let release: LocalRelease
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            LibraryArtwork(style: release.artworkStyle)
+            TrackArtworkView(artworkURL: release.artworkURL, fallbackName: "MistyLake")
                 .aspectRatio(1, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
@@ -322,7 +325,7 @@ private struct ReleaseTile: View {
                 .foregroundStyle(.white.opacity(0.56))
                 .lineLimit(1)
 
-            Text(LocalizedStringKey(release.metaKey))
+            Text("\(release.tracks.count) \(String(localized: "collection.tracks_unit"))")
                 .font(.system(size: 10, weight: .regular, design: .rounded))
                 .foregroundStyle(.white.opacity(0.42))
                 .lineLimit(1)
@@ -332,17 +335,18 @@ private struct ReleaseTile: View {
 }
 
 private struct TopArtistRow: View {
-    let artist: LibraryTopArtist
+    let artist: LocalArtist
+    let rank: Int
 
     var body: some View {
         HStack(spacing: 10) {
-            Text(verbatim: "\(artist.rank)")
+            Text(verbatim: "\(rank)")
                 .font(.system(size: 12, weight: .semibold, design: .rounded).monospacedDigit())
                 .foregroundStyle(.white.opacity(0.62))
                 .frame(width: 18)
 
-            ArtistAvatar(style: artist.avatarStyle)
-                .frame(width: 32, height: 32)
+            TrackArtworkView(artworkURL: artist.artworkURL, fallbackName: "ArtistHero")
+                .scaledToFill().frame(width: 32, height: 32).clipShape(Circle())
 
             Text(verbatim: artist.name)
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
@@ -350,7 +354,7 @@ private struct TopArtistRow: View {
 
             Spacer(minLength: 8)
 
-            Text(LocalizedStringKey(artist.durationKey))
+            Text(verbatim: TimeInterval(artist.durationSeconds).trackDurationText)
                 .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
                 .foregroundStyle(.white.opacity(0.54))
                 .lineLimit(1)
@@ -477,51 +481,6 @@ private struct LibraryPlaylist: Identifiable, Sendable {
         )
     }
 
-    static let samples = [
-        LibraryPlaylist(id: "night", titleKey: "library.playlist_night", detailKey: "library.playlist_night_detail", collectionMetadataKey: "collection.night_metadata", detailArtwork: .violet, artworkStyle: .violet),
-        LibraryPlaylist(id: "training", titleKey: "library.playlist_training", detailKey: "library.playlist_training_detail", collectionMetadataKey: "collection.training_metadata", detailArtwork: .mistyLake, artworkStyle: .midnight),
-        LibraryPlaylist(id: "road", titleKey: "library.playlist_road", detailKey: "library.playlist_road_detail", collectionMetadataKey: "collection.road_metadata", detailArtwork: .sunset, artworkStyle: .sunset)
-    ]
-}
-
-private struct LibraryRelease: Identifiable, Sendable {
-    let id: String
-    let title: String
-    let artist: String
-    let metaKey: String
-    let artworkStyle: LibraryArtworkStyle
-
-    var detailDestination: CollectionDetailDestination {
-        .release(
-            title: title,
-            metadataKey: metaKey,
-            artwork: artworkStyle.detailArtwork
-        )
-    }
-
-    static let samples = [
-        LibraryRelease(id: "ram", title: "Random Access…", artist: "Daft Punk", metaKey: "library.release_album_2013", artworkStyle: .silver),
-        LibraryRelease(id: "rainbows", title: "In Rainbows", artist: "Radiohead", metaKey: "library.release_album_2007", artworkStyle: .violet),
-        LibraryRelease(id: "bangarang", title: "Bangarang EP", artist: "Skrillex", metaKey: "library.release_ep_2011", artworkStyle: .sunset)
-    ]
-}
-
-private struct LibraryTopArtist: Identifiable, Sendable {
-    let id: Int
-    let rank: Int
-    let name: String
-    let durationKey: String
-    let avatarStyle: LibraryArtworkStyle
-
-    var detailDestination: ArtistDetailDestination {
-        ArtistDetailDestination(name: name)
-    }
-
-    static let samples = [
-        LibraryTopArtist(id: 1, rank: 1, name: "Fred again..", durationKey: "library.duration_7_12", avatarStyle: .mistyLake),
-        LibraryTopArtist(id: 2, rank: 2, name: "Skrillex", durationKey: "library.duration_5_48", avatarStyle: .sunset),
-        LibraryTopArtist(id: 3, rank: 3, name: "Burial", durationKey: "library.duration_3_04", avatarStyle: .midnight)
-    ]
 }
 
 private struct CreatePlaylistSheet: View {

@@ -30,6 +30,7 @@ struct PlayableTrack: Identifiable, Hashable, Codable, Sendable {
     let id: String
     let title: String
     let artist: String
+    let albumTitle: String?
     let durationSeconds: Int
     let artworkName: String
     let artworkURL: URL?
@@ -39,6 +40,7 @@ struct PlayableTrack: Identifiable, Hashable, Codable, Sendable {
         id: String,
         title: String,
         artist: String,
+        albumTitle: String? = nil,
         durationSeconds: Int,
         artworkName: String,
         artworkURL: URL? = nil,
@@ -47,6 +49,7 @@ struct PlayableTrack: Identifiable, Hashable, Codable, Sendable {
         self.id = id
         self.title = title
         self.artist = artist
+        self.albumTitle = albumTitle
         self.durationSeconds = durationSeconds
         self.artworkName = artworkName
         self.artworkURL = artworkURL
@@ -74,6 +77,7 @@ final class PlaybackCoordinator: ObservableObject {
 
     @Published private(set) var currentTrack: PlayableTrack = .empty
     @Published private(set) var queue: [PlayableTrack] = []
+    @Published private(set) var playbackHistory: [PlayableTrack] = []
     @Published private(set) var isPlaying = false
     @Published private(set) var elapsedSeconds: Double = 0
     @Published private(set) var playbackError: String?
@@ -91,7 +95,6 @@ final class PlaybackCoordinator: ObservableObject {
         return session
     }()
     private var currentIndex: Int?
-    private var history: [PlayableTrack] = []
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
     private var failureObserver: NSObjectProtocol?
@@ -115,6 +118,8 @@ final class PlaybackCoordinator: ObservableObject {
         return min(max(elapsedSeconds / Double(currentTrack.durationSeconds), 0), 1)
     }
 
+    var hasCurrentTrack: Bool { currentTrack != .empty && currentTrack.fileURL != nil }
+
     var upcomingTracks: [PlayableTrack] {
         guard let currentIndex, queue.indices.contains(currentIndex) else { return queue }
         let next = queue.index(after: currentIndex)
@@ -126,7 +131,7 @@ final class PlaybackCoordinator: ObservableObject {
         guard !localTracks.isEmpty else {
             let removedCurrentTrack = currentTrack.fileURL != nil
             queue.removeAll { $0.fileURL != nil }
-            history.removeAll { $0.fileURL != nil }
+            playbackHistory.removeAll { $0.fileURL != nil }
             if removedCurrentTrack {
                 if queue.isEmpty {
                     clear()
@@ -143,12 +148,15 @@ final class PlaybackCoordinator: ObservableObject {
         let currentID = currentTrack.id
         let nonLocal = queue.filter { $0.fileURL == nil }
         queue = nonLocal + localTracks
+        let localIDs = Set(localTracks.map(\.id))
+        playbackHistory.removeAll { $0.fileURL != nil && !localIDs.contains($0.id) }
         if let index = queue.firstIndex(where: { $0.id == currentID }) {
             currentIndex = index
             currentTrack = queue[index]
-        } else if currentIndex == nil || currentTrack == .empty {
-            currentIndex = 0
-            currentTrack = queue[0]
+        } else {
+            let fallbackIndex = min(currentIndex ?? 0, queue.count - 1)
+            selectTrack(at: fallbackIndex, autoplay: false, recordHistory: false)
+            return
         }
         persistState()
     }
@@ -165,7 +173,8 @@ final class PlaybackCoordinator: ObservableObject {
 
     func play(_ tracks: [PlayableTrack], startingAt index: Int = 0) {
         guard tracks.indices.contains(index) else { return }
-        history.removeAll()
+        playbackError = nil
+        playbackHistory.removeAll()
         if isShuffleEnabled {
             let selected = tracks[index]
             let remaining = tracks.enumerated()
@@ -231,11 +240,11 @@ final class PlaybackCoordinator: ObservableObject {
             seek(to: 0)
             return
         }
-        guard !history.isEmpty else {
+        guard !playbackHistory.isEmpty else {
             seek(to: 0)
             return
         }
-        let previous = history.removeLast()
+        let previous = playbackHistory.removeLast()
         guard let index = queue.firstIndex(where: { $0.id == previous.id }) else { return }
         selectTrack(at: index, autoplay: true, recordHistory: false)
     }
@@ -290,9 +299,28 @@ final class PlaybackCoordinator: ObservableObject {
         persistState()
     }
 
+    func removeUpcoming(atOffsets offsets: IndexSet) {
+        guard let currentIndex else { return }
+        let start = currentIndex + 1
+        let absoluteOffsets = IndexSet(offsets.map { start + $0 })
+        queue.remove(atOffsets: absoluteOffsets)
+        persistState()
+        updateNowPlaying()
+    }
+
+    func clearUpcoming() {
+        guard let currentIndex, currentIndex + 1 < queue.count else { return }
+        queue.removeSubrange((currentIndex + 1)...)
+        persistState()
+        updateNowPlaying()
+    }
+
+    func clearPlaybackError() { playbackError = nil }
+
     private func clear() {
         player.replaceCurrentItem(with: nil)
         queue = []
+        playbackHistory = []
         currentIndex = nil
         currentTrack = .empty
         elapsedSeconds = 0
@@ -304,7 +332,7 @@ final class PlaybackCoordinator: ObservableObject {
     private func selectTrack(at index: Int, autoplay: Bool, recordHistory: Bool = true) {
         guard queue.indices.contains(index) else { return }
         if recordHistory, currentTrack != .empty, currentTrack.id != queue[index].id {
-            history.append(currentTrack)
+            playbackHistory.append(currentTrack)
         }
         currentIndex = index
         currentTrack = queue[index]
@@ -320,7 +348,11 @@ final class PlaybackCoordinator: ObservableObject {
         }
 
         player.replaceCurrentItem(with: AVPlayerItem(url: url))
-        if autoplay { resume() }
+        if autoplay {
+            resume()
+        } else {
+            isPlaying = false
+        }
         persistState()
         updateNowPlaying()
     }
@@ -385,6 +417,7 @@ final class PlaybackCoordinator: ObservableObject {
             queue: .main
         ) { [weak self] notification in
             let message = (notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error)?.localizedDescription
+                ?? String(localized: "player.playback_failed")
             Task { @MainActor in
                 self?.playbackError = message
                 self?.advance(automatic: true)
@@ -533,6 +566,7 @@ final class PlaybackCoordinator: ObservableObject {
 
     private struct PersistedState: Codable {
         let queue: [PlayableTrack]
+        let history: [PlayableTrack]?
         let currentID: String?
         let elapsedSeconds: Double
         let shuffle: Bool
@@ -543,6 +577,7 @@ final class PlaybackCoordinator: ObservableObject {
         guard !isRestoring else { return }
         let state = PersistedState(
             queue: queue,
+            history: playbackHistory,
             currentID: currentTrack == .empty ? nil : currentTrack.id,
             elapsedSeconds: elapsedSeconds,
             shuffle: isShuffleEnabled,
@@ -560,6 +595,10 @@ final class PlaybackCoordinator: ObservableObject {
             guard let url = track.fileURL else { return true }
             return FileManager.default.fileExists(atPath: url.path)
         }
+        playbackHistory = (state.history ?? []).filter { track in
+            guard let url = track.fileURL else { return true }
+            return FileManager.default.fileExists(atPath: url.path)
+        }
         isShuffleEnabled = state.shuffle
         repeatMode = state.repeatMode
         guard let currentID = state.currentID,
@@ -572,8 +611,3 @@ final class PlaybackCoordinator: ObservableObject {
         }
     }
 }
-
-// Temporary compatibility for the preview-only models that will be removed as
-// the remaining mocked catalog screens are connected to repositories.
-typealias MockPlayableTrack = PlayableTrack
-typealias MockPlaybackState = PlaybackCoordinator

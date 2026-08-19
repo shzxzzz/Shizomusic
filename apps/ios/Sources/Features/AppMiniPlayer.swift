@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct AppMiniPlayer: View {
-    @EnvironmentObject private var playback: MockPlaybackState
+    @EnvironmentObject private var playback: PlaybackCoordinator
 
     let onOpenPlayer: () -> Void
 

@@ -8,7 +8,7 @@ struct LibraryView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            PlayerNavigationRoot()
+            PlayerNavigationRoot(onOpenLibrary: { selectedTab = .library })
                 .tag(AppTab.player)
                 .tabItem {
                     Label("tab.player", systemImage: "play.circle.fill")
@@ -55,13 +55,23 @@ struct LibraryView: View {
             guard scenePhase == .active else { return }
             Task { await localLibrary.scan() }
         }
+        .sheet(
+            item: Binding(
+                get: { localLibrary.lastImportReport },
+                set: { if $0 == nil { localLibrary.dismissImportReport() } }
+            )
+        ) { report in
+            ImportReportView(report: report)
+        }
     }
 }
 
 private struct PlayerNavigationRoot: View {
+    let onOpenLibrary: () -> Void
+
     var body: some View {
         NavigationStack {
-            PlayerScreen()
+            PlayerScreen(onOpenLibrary: onOpenLibrary)
                 .navigationDestination(for: CollectionDetailDestination.self) { destination in
                     CollectionDetailScreen(destination: destination)
                 }
@@ -70,15 +80,18 @@ private struct PlayerNavigationRoot: View {
 }
 
 private struct NonPlayerTabShell<Content: View>: View {
+    @EnvironmentObject private var playback: PlaybackCoordinator
     let onOpenPlayer: () -> Void
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         content()
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                AppMiniPlayer(onOpenPlayer: onOpenPlayer)
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 6)
+                if playback.hasCurrentTrack {
+                    AppMiniPlayer(onOpenPlayer: onOpenPlayer)
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, 6)
+                }
             }
     }
 }
@@ -92,6 +105,7 @@ private enum AppTab: Hashable {
 
 private struct PlayerScreen: View {
     @EnvironmentObject private var playback: PlaybackCoordinator
+    let onOpenLibrary: () -> Void
 
     @State private var showsQueue = false
 
@@ -102,7 +116,8 @@ private struct PlayerScreen: View {
                 artworkURL: playback.currentTrack.artworkURL
             )
 
-            GeometryReader { geometry in
+            if playback.hasCurrentTrack {
+                GeometryReader { geometry in
                 let compactLayout = geometry.size.height < 700
                 let horizontalPadding: CGFloat = 24
                 let contentWidth = min(geometry.size.width - horizontalPadding * 2, 420)
@@ -116,6 +131,9 @@ private struct PlayerScreen: View {
                     availableHeight: geometry.size.height
                 )
                 .frame(width: geometry.size.width, height: geometry.size.height)
+                }
+            } else {
+                EmptyPlayerView(onOpenLibrary: onOpenLibrary)
             }
         }
         .animation(.easeInOut(duration: 0.45), value: playback.currentTrack.id)
@@ -149,6 +167,11 @@ private struct PlayerScreen: View {
                 progressSection
                     .padding(.top, progressGap)
 
+                if let error = playback.playbackError {
+                    PlaybackErrorBanner(message: error, onDismiss: playback.clearPlaybackError)
+                        .padding(.top, 10)
+                }
+
                 controls
                     .padding(.top, progressGap)
             }
@@ -180,7 +203,7 @@ private struct PlayerScreen: View {
                     Image(systemName: "list.bullet")
                         .font(.system(size: 13, weight: .semibold))
 
-                    Text("player.playlist")
+                    Text(verbatim: playback.currentTrack.albumTitle ?? String(localized: "library.offline"))
                         .font(.system(size: 17, weight: .semibold, design: .rounded))
 
                     Image(systemName: "chevron.right")
@@ -193,11 +216,10 @@ private struct PlayerScreen: View {
     }
 
     private var currentPlaylistDestination: CollectionDetailDestination {
-        .playlist(
-            titleKey: "player.playlist",
-            metadataKey: "player.playlist_metadata",
-            artwork: currentPlaylistArtwork
-        )
+        if let album = playback.currentTrack.albumTitle, !album.isEmpty {
+            return .release(title: album, metadataKey: playback.currentTrack.artist, artwork: currentPlaylistArtwork)
+        }
+        return .offline
     }
 
     private var currentPlaylistArtwork: CollectionHeroArtwork {
@@ -328,6 +350,47 @@ private struct PlayerScreen: View {
         let minutes = seconds / 60
         let remainingSeconds = seconds % 60
         return "\(minutes):\(remainingSeconds < 10 ? "0" : "")\(remainingSeconds)"
+    }
+}
+
+private struct EmptyPlayerView: View {
+    let onOpenLibrary: () -> Void
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "music.note.house")
+                .font(.system(size: 54, weight: .light))
+                .foregroundStyle(.white.opacity(0.8))
+            Text("player.empty_title")
+                .font(.title2.weight(.semibold))
+            Text("player.empty_detail")
+                .font(.body)
+                .foregroundStyle(.white.opacity(0.65))
+                .multilineTextAlignment(.center)
+            Button("player.open_library", action: onOpenLibrary)
+                .buttonStyle(.borderedProminent)
+                .tint(.white)
+                .foregroundStyle(.black)
+        }
+        .padding(32)
+        .frame(maxWidth: 440)
+    }
+}
+
+private struct PlaybackErrorBanner: View {
+    let message: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+            Text(verbatim: message).font(.footnote).frame(maxWidth: .infinity, alignment: .leading)
+            Button(action: onDismiss) { Image(systemName: "xmark") }
+                .accessibilityLabel(Text("player.dismiss_error"))
+        }
+        .foregroundStyle(.white)
+        .padding(12)
+        .background(.red.opacity(0.72), in: RoundedRectangle(cornerRadius: 14))
     }
 }
 

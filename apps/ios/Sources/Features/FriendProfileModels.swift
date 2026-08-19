@@ -11,8 +11,7 @@ enum FriendProfileTab: String, CaseIterable, Hashable, Sendable {
         }
     }
 }
-
-enum FriendSyncPreviewState: String, Hashable, Sendable {
+enum FriendSyncState: String, Hashable, Sendable {
     case disconnected
     case synchronized
     case reconnecting
@@ -46,7 +45,7 @@ enum FriendSyncPreviewState: String, Hashable, Sendable {
     }
 }
 
-struct FriendCurrentTrackPreview: Identifiable, Hashable, Sendable {
+struct FriendCurrentTrack: Identifiable, Hashable, Sendable {
     let id: String
     let title: String
     let artistName: String
@@ -56,7 +55,7 @@ struct FriendCurrentTrackPreview: Identifiable, Hashable, Sendable {
     let progress: Double
     let isPlaying: Bool
 
-    static let sample = FriendCurrentTrackPreview(
+    static let sample = FriendCurrentTrack(
         id: "friend-dancing-in-flames",
         title: "Dancing In The Flames",
         artistName: "The Weeknd",
@@ -68,7 +67,7 @@ struct FriendCurrentTrackPreview: Identifiable, Hashable, Sendable {
     )
 }
 
-struct FriendQueueItemPreview: Identifiable, Hashable, Sendable {
+struct FriendQueueItem: Identifiable, Hashable, Sendable {
     let id: String
     let title: String
     let artistName: String
@@ -76,9 +75,9 @@ struct FriendQueueItemPreview: Identifiable, Hashable, Sendable {
     let artworkName: String
 
     static let samples = [
-        FriendQueueItemPreview(id: "friend-sao-paulo", title: "São Paulo", artistName: "The Weeknd", durationText: "3:37", artworkName: "AuroraShore"),
-        FriendQueueItemPreview(id: "friend-open-hearts", title: "Open Hearts", artistName: "The Weeknd", durationText: "3:49", artworkName: "MistyLake"),
-        FriendQueueItemPreview(id: "friend-take-my-breath", title: "Take My Breath", artistName: "The Weeknd", durationText: "3:40", artworkName: "ArtistHero")
+        FriendQueueItem(id: "friend-sao-paulo", title: "São Paulo", artistName: "The Weeknd", durationText: "3:37", artworkName: "AuroraShore"),
+        FriendQueueItem(id: "friend-open-hearts", title: "Open Hearts", artistName: "The Weeknd", durationText: "3:49", artworkName: "MistyLake"),
+        FriendQueueItem(id: "friend-take-my-breath", title: "Take My Breath", artistName: "The Weeknd", durationText: "3:40", artworkName: "ArtistHero")
     ]
 }
 
@@ -115,33 +114,33 @@ enum FriendSavedKind: String, CaseIterable, Hashable, Sendable {
         }
     }
 
-    var usesCircularPreviews: Bool { self == .artists }
+    var usesCircularArtwork: Bool { self == .artists }
 }
 
-struct FriendSavedPreview: Identifiable, Hashable, Sendable {
+struct FriendSavedItem: Identifiable, Hashable, Sendable {
     let kind: FriendSavedKind
     let artworkNames: [String]
 
     var id: FriendSavedKind { kind }
 
     static let samples = [
-        FriendSavedPreview(kind: .playlists, artworkNames: ["AuroraShore", "MistyLake", "ArtistHero"]),
-        FriendSavedPreview(kind: .releases, artworkNames: ["ArtistHero", "AuroraShore", "MistyLake"]),
-        FriendSavedPreview(kind: .artists, artworkNames: ["ArtistHero", "MistyLake", "AuroraShore"]),
-        FriendSavedPreview(kind: .liked, artworkNames: ["MistyLake", "ArtistHero", "AuroraShore"])
+        FriendSavedItem(kind: .playlists, artworkNames: ["AuroraShore", "MistyLake", "ArtistHero"]),
+        FriendSavedItem(kind: .releases, artworkNames: ["ArtistHero", "AuroraShore", "MistyLake"]),
+        FriendSavedItem(kind: .artists, artworkNames: ["ArtistHero", "MistyLake", "AuroraShore"]),
+        FriendSavedItem(kind: .liked, artworkNames: ["MistyLake", "ArtistHero", "AuroraShore"])
     ]
 }
 
-struct FriendSuggestionTrackPreview: Identifiable, Hashable, Sendable {
+struct FriendSuggestionTrack: Identifiable, Hashable, Sendable {
     let id: String
     let title: String
     let artistName: String
     let artworkName: String
 
     static let samples = [
-        FriendSuggestionTrackPreview(id: "suggest-rumble", title: "Rumble", artistName: "Skrillex, Fred again..", artworkName: "AuroraShore"),
-        FriendSuggestionTrackPreview(id: "suggest-blinding", title: "Blinding Lights", artistName: "The Weeknd", artworkName: "ArtistHero"),
-        FriendSuggestionTrackPreview(id: "suggest-pulse", title: "Пульс тишины", artistName: "Эхо Внутри", artworkName: "MistyLake")
+        FriendSuggestionTrack(id: "suggest-rumble", title: "Rumble", artistName: "Skrillex, Fred again..", artworkName: "AuroraShore"),
+        FriendSuggestionTrack(id: "suggest-blinding", title: "Blinding Lights", artistName: "The Weeknd", artworkName: "ArtistHero"),
+        FriendSuggestionTrack(id: "suggest-pulse", title: "Пульс тишины", artistName: "Эхо Внутри", artworkName: "MistyLake")
     ]
 }
 
@@ -150,53 +149,53 @@ struct FriendSavedDestination: Hashable, Sendable {
     let kind: FriendSavedKind
 }
 
-struct FriendProfilePreviewState: Sendable {
+struct FriendProfileState: Sendable {
     let id: String
     let displayName: String
     let avatarStyle: FriendAvatarStyle
     let isOnline: Bool
     var selectedTab: FriendProfileTab
-    let currentTrack: FriendCurrentTrackPreview?
-    let queue: [FriendQueueItemPreview]
+    let currentTrack: FriendCurrentTrack?
+    let queue: [FriendQueueItem]
     var isConnected: Bool
-    var syncState: FriendSyncPreviewState
-    let savedContent: [FriendSavedPreview]
+    var syncState: FriendSyncState
+    let savedContent: [FriendSavedItem]
 
-    static func make(for destination: FriendProfileDestination) -> FriendProfilePreviewState {
-        let friend = FriendPreviewModel.samples.first { $0.id == destination.id }
+    static func make(for destination: FriendProfileDestination) -> FriendProfileState {
+        let friend = FriendModel.samples.first { $0.id == destination.id }
         let isOnline = friend?.isOnline ?? true
         let isListening = friend?.isListening ?? true
 
-        return FriendProfilePreviewState(
+        return FriendProfileState(
             id: destination.id,
             displayName: destination.displayName,
             avatarStyle: friend?.avatarStyle ?? .neutral,
             isOnline: isOnline,
             selectedTab: .nowPlaying,
             currentTrack: isOnline && isListening ? .sample : nil,
-            queue: isOnline && isListening ? FriendQueueItemPreview.samples : [],
+            queue: isOnline && isListening ? FriendQueueItem.samples : [],
             isConnected: false,
             syncState: .disconnected,
-            savedContent: FriendSavedPreview.samples
+            savedContent: FriendSavedItem.samples
         )
     }
 
     static let onlineListening = make(for: FriendProfileDestination(id: "alex", displayName: "Alex"))
 
-    static var connected: FriendProfilePreviewState {
+    static var connected: FriendProfileState {
         var state = onlineListening
         state.isConnected = true
         state.syncState = .synchronized
         return state
     }
 
-    static var queueTab: FriendProfilePreviewState {
+    static var queueTab: FriendProfileState {
         var state = onlineListening
         state.selectedTab = .queue
         return state
     }
 
-    static let onlineIdle = FriendProfilePreviewState(
+    static let onlineIdle = FriendProfileState(
         id: "kate",
         displayName: "Kate",
         avatarStyle: .image("MistyLake"),
@@ -206,10 +205,10 @@ struct FriendProfilePreviewState: Sendable {
         queue: [],
         isConnected: false,
         syncState: .disconnected,
-        savedContent: FriendSavedPreview.samples
+        savedContent: FriendSavedItem.samples
     )
 
-    static let offline = FriendProfilePreviewState(
+    static let offline = FriendProfileState(
         id: "dima",
         displayName: "Dima",
         avatarStyle: .amber,
@@ -219,10 +218,10 @@ struct FriendProfilePreviewState: Sendable {
         queue: [],
         isConnected: false,
         syncState: .disconnected,
-        savedContent: FriendSavedPreview.samples
+        savedContent: FriendSavedItem.samples
     )
 
-    static var reconnecting: FriendProfilePreviewState {
+    static var reconnecting: FriendProfileState {
         var state = connected
         state.syncState = .reconnecting
         return state

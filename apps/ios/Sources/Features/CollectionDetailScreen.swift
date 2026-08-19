@@ -29,17 +29,25 @@ struct CollectionDetailScreen: View {
 
     let destination: CollectionDetailDestination
 
-    private var model: CollectionDetailPreviewModel {
-        CollectionDetailPreviewModel(destination: destination)
+    private var model: CollectionDetailModel {
+        CollectionDetailModel(destination: destination)
     }
 
     private var showsStickyHeader: Bool {
         heroBottom < 84
     }
 
-    private var displayedTracks: [CollectionTrackPreviewModel] {
-        guard model.kind == .offline else { return model.tracks }
-        return localLibrary.tracks.map(CollectionTrackPreviewModel.init(playableTrack:))
+    private var displayedTracks: [CollectionTrackModel] {
+        let tracks: [PlayableTrack]
+        switch destination {
+        case .offline:
+            tracks = localLibrary.tracks
+        case let .release(title, metadataKey, _):
+            tracks = localLibrary.tracks.filter { $0.albumTitle == title && $0.artist == metadataKey }
+        case .playlist, .liked:
+            tracks = []
+        }
+        return tracks.map(CollectionTrackModel.init(playableTrack:))
     }
 
     var body: some View {
@@ -76,6 +84,11 @@ struct CollectionDetailScreen: View {
                     secondaryControls
                         .padding(.top, 12)
 
+                    if model.kind == .offline, let progress = localLibrary.progress {
+                        MediaLibraryProgressView(progress: progress)
+                            .padding(.top, 14)
+                    }
+
                     trackList
                         .padding(.top, 30)
                 }
@@ -104,7 +117,7 @@ struct CollectionDetailScreen: View {
         .preferredColorScheme(.dark)
         .fileImporter(
             isPresented: $showsFileImporter,
-            allowedContentTypes: [.audio],
+            allowedContentTypes: [.audio, .data],
             allowsMultipleSelection: true
         ) { result in
             guard case let .success(urls) = result else { return }
@@ -221,6 +234,10 @@ struct CollectionDetailScreen: View {
                     isCurrent: playback.currentTrack.id == track.id,
                     onTap: {
                         playback.play(displayedTracks.map(\.playableTrack), startingAt: index)
+                    },
+                    onRemove: {
+                        guard model.kind == .offline else { return }
+                        Task { await localLibrary.removeTrack(track.playableTrack) }
                     }
                 )
 
@@ -246,8 +263,74 @@ struct CollectionDetailScreen: View {
     }
 }
 
+struct MediaLibraryProgressView: View {
+    let progress: MediaLibraryProgress
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(progress.phase == .importing ? "import.progress_importing" : "import.progress_scanning")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                Spacer()
+                Text(verbatim: "\(progress.completed)/\(progress.total)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            ProgressView(value: progress.fraction)
+                .tint(.cyan)
+            if let filename = progress.filename {
+                Text(verbatim: filename)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(14)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+struct ImportReportView: View {
+    @Environment(\.dismiss) private var dismiss
+    let report: ImportReport
+
+    var body: some View {
+        NavigationStack {
+            List {
+                resultSection("import.result_imported", files: report.imported, color: .green)
+                resultSection("import.result_duplicates", files: report.duplicates, color: .orange)
+                resultSection("import.result_corrupted", files: report.corrupted, color: .red)
+                resultSection("import.result_unsupported", files: report.unsupported, color: .yellow)
+                resultSection("import.result_failed", files: report.failed, color: .red)
+            }
+            .navigationTitle("import.result_title")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("queue.done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    @ViewBuilder
+    private func resultSection(_ titleKey: LocalizedStringKey, files: [String], color: Color) -> some View {
+        if !files.isEmpty {
+            Section {
+                ForEach(files, id: \.self) { Text(verbatim: $0) }
+            } header: {
+                HStack {
+                    Circle().fill(color).frame(width: 7, height: 7)
+                    Text(titleKey)
+                    Text(verbatim: "\(files.count)")
+                }
+            }
+        }
+    }
+}
+
 private struct CollectionNavigationHeader: View {
-    let model: CollectionDetailPreviewModel
+    let model: CollectionDetailModel
     @Binding var isEditing: Bool
     let onBack: () -> Void
 
@@ -529,11 +612,12 @@ private struct CollectionSecondaryActionButton: View {
 }
 
 private struct CollectionTrackRow: View {
-    let track: CollectionTrackPreviewModel
+    let track: CollectionTrackModel
     let kind: CollectionDetailKind
     let isEditing: Bool
     let isCurrent: Bool
     let onTap: () -> Void
+    let onRemove: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -591,7 +675,7 @@ private struct CollectionTrackRow: View {
             .buttonStyle(.plain)
 
             if isEditing {
-                Button(action: {}) {
+                Button(action: onRemove) {
                     Image(systemName: "minus.circle.fill")
                         .font(.system(size: 20))
                         .foregroundStyle(.red.opacity(0.82))
@@ -648,8 +732,9 @@ private struct CollectionTrackArtworkView: View {
 
 private struct TrackOverflowMenu: View {
     @EnvironmentObject private var playback: PlaybackCoordinator
+    @EnvironmentObject private var localLibrary: LocalMediaLibrary
 
-    let track: CollectionTrackPreviewModel
+    let track: CollectionTrackModel
     let kind: CollectionDetailKind
 
     var body: some View {
@@ -674,7 +759,10 @@ private struct TrackOverflowMenu: View {
                             : "collection.remove_from_playlist"
                     ),
                     role: .destructive,
-                    action: {}
+                    action: {
+                        guard kind == .offline else { return }
+                        Task { await localLibrary.removeTrack(track.playableTrack) }
+                    }
                 )
             }
         } label: {
@@ -844,12 +932,11 @@ enum CollectionDetailKind: String, Hashable, Sendable {
     case offline
 }
 
-private struct CollectionDetailPreviewModel: Sendable {
+private struct CollectionDetailModel: Sendable {
     let kind: CollectionDetailKind
     let titleKey: String
     let metadataKey: String
     let heroArtwork: CollectionHeroArtwork?
-    let tracks: [CollectionTrackPreviewModel]
 
     init(destination: CollectionDetailDestination) {
         switch destination {
@@ -858,25 +945,21 @@ private struct CollectionDetailPreviewModel: Sendable {
             self.titleKey = titleKey
             self.metadataKey = metadataKey
             self.heroArtwork = artwork
-            self.tracks = CollectionTrackPreviewModel.playlistSamples
         case let .release(title, metadataKey, artwork):
             self.kind = .release
             self.titleKey = title
             self.metadataKey = metadataKey
             self.heroArtwork = artwork
-            self.tracks = CollectionTrackPreviewModel.releaseSamples
         case .liked:
             self.kind = .liked
             self.titleKey = "library.liked"
             self.metadataKey = "collection.liked_metadata"
             self.heroArtwork = .liked
-            self.tracks = CollectionTrackPreviewModel.likedSamples
         case .offline:
             self.kind = .offline
             self.titleKey = "library.offline"
             self.metadataKey = "collection.offline_metadata"
             self.heroArtwork = nil
-            self.tracks = CollectionTrackPreviewModel.offlineSamples
         }
     }
 
@@ -896,7 +979,7 @@ private struct CollectionDetailPreviewModel: Sendable {
     }
 }
 
-private struct CollectionTrackPreviewModel: Identifiable, Sendable {
+private struct CollectionTrackModel: Identifiable, Sendable {
     let id: String
     let title: String
     let artist: String
@@ -933,8 +1016,8 @@ private struct CollectionTrackPreviewModel: Identifiable, Sendable {
         fileURL = playableTrack.fileURL
     }
 
-    var playableTrack: MockPlayableTrack {
-        MockPlayableTrack(
+    var playableTrack: PlayableTrack {
+        PlayableTrack(
             id: id,
             title: title,
             artist: artist,
@@ -955,38 +1038,6 @@ private struct CollectionTrackPreviewModel: Identifiable, Sendable {
         return components[0] * 60 + components[1]
     }
 
-    static let playlistSamples = [
-        CollectionTrackPreviewModel(id: "after-dark", title: "After Dark", artist: "Mr.Kitty", durationText: "3:51", artwork: .violet),
-        CollectionTrackPreviewModel(id: "midnight-city", title: "Midnight City", artist: "M83", durationText: "4:03", artwork: .auroraShore),
-        CollectionTrackPreviewModel(id: "nightcall", title: "Nightcall", artist: "Kavinsky", durationText: "4:18", artwork: .amber),
-        CollectionTrackPreviewModel(id: "less-i-know", title: "The Less I Know The Better", artist: "Tame Impala", durationText: "3:38", artwork: .mistyLake),
-        CollectionTrackPreviewModel(id: "space-song", title: "Space Song", artist: "Beach House", durationText: "5:20", artwork: .graphite),
-        CollectionTrackPreviewModel(id: "resonance", title: "Resonance", artist: "HOME", durationText: "3:32", artwork: .violet)
-    ]
-
-    static let likedSamples = [
-        CollectionTrackPreviewModel(id: "instant-crush", title: "Instant Crush", artist: "Daft Punk", durationText: "5:37", artwork: .amber),
-        CollectionTrackPreviewModel(id: "after-dark-liked", title: "After Dark", artist: "Mr.Kitty", durationText: "3:51", artwork: .violet),
-        CollectionTrackPreviewModel(id: "space-song-liked", title: "Space Song", artist: "Beach House", durationText: "5:20", artwork: .mistyLake),
-        CollectionTrackPreviewModel(id: "nightcall-liked", title: "Nightcall", artist: "Kavinsky", durationText: "4:18", artwork: .auroraShore),
-        CollectionTrackPreviewModel(id: "resonance-liked", title: "Resonance", artist: "HOME", durationText: "3:32", artwork: .graphite)
-    ]
-
-    static let offlineSamples = [
-        CollectionTrackPreviewModel(id: "nightcall-offline", title: "Nightcall", artist: "Kavinsky", durationText: "4:18", artwork: .amber),
-        CollectionTrackPreviewModel(id: "midnight-city-offline", title: "Midnight City", artist: "M83", durationText: "4:03", artwork: .auroraShore),
-        CollectionTrackPreviewModel(id: "after-dark-offline", title: "After Dark", artist: "Mr.Kitty", durationText: "3:51", artwork: .violet),
-        CollectionTrackPreviewModel(id: "resonance-offline", title: "Resonance", artist: "HOME", durationText: "3:32", artwork: .graphite),
-        CollectionTrackPreviewModel(id: "505-offline", title: "505", artist: "Arctic Monkeys", durationText: "4:13", artwork: .mistyLake),
-        CollectionTrackPreviewModel(id: "instant-crush-offline", title: "Instant Crush", artist: "Daft Punk", durationText: "5:37", artwork: .amber)
-    ]
-
-    static let releaseSamples = [
-        CollectionTrackPreviewModel(id: "give-life-back", title: "Give Life Back to Music", artist: "Daft Punk", durationText: "4:35", artwork: .graphite),
-        CollectionTrackPreviewModel(id: "game-of-love", title: "The Game of Love", artist: "Daft Punk", durationText: "5:22", artwork: .amber),
-        CollectionTrackPreviewModel(id: "giorgio", title: "Giorgio by Moroder", artist: "Daft Punk", durationText: "9:04", artwork: .violet),
-        CollectionTrackPreviewModel(id: "instant-crush-release", title: "Instant Crush", artist: "Daft Punk", durationText: "5:37", artwork: .auroraShore)
-    ]
 }
 
 private enum CollectionTrackArtwork: String, Hashable, Sendable {
@@ -1034,7 +1085,7 @@ private extension CollectionHeroArtwork {
             )
         )
     }
-    .environmentObject(MockPlaybackState())
+    .environmentObject(PlaybackCoordinator())
     .environmentObject(LocalMediaLibrary())
 }
 
@@ -1042,6 +1093,6 @@ private extension CollectionHeroArtwork {
     NavigationStack {
         CollectionDetailScreen(destination: .offline)
     }
-    .environmentObject(MockPlaybackState())
+    .environmentObject(PlaybackCoordinator())
     .environmentObject(LocalMediaLibrary())
 }

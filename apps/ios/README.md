@@ -20,3 +20,6 @@ those capabilities.
 `PlaybackCoordinator` is the single owner of `AVPlayer`, the persisted queue and
 playback state. It handles seeking, previous/next history, shuffle, repeat-one/all,
 background audio, interruptions, headphone removal and Control Center commands.
+
+The device regression checklist is in
+[`PHYSICAL_DEVICE_TEST_PLAN.md`](PHYSICAL_DEVICE_TEST_PLAN.md).
