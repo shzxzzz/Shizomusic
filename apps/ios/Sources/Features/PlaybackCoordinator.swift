@@ -306,9 +306,10 @@ final class PlaybackCoordinator: ObservableObject {
             forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
             queue: .main
         ) { [weak self] time in
+            let seconds = time.seconds.isFinite ? time.seconds : 0
             Task { @MainActor in
                 guard let self else { return }
-                self.elapsedSeconds = max(time.seconds.isFinite ? time.seconds : 0, 0)
+                self.elapsedSeconds = max(seconds, 0)
                 self.updateNowPlaying()
             }
         }
@@ -326,8 +327,9 @@ final class PlaybackCoordinator: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
+            let message = (notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error)?.localizedDescription
             Task { @MainActor in
-                self?.playbackError = (notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error)?.localizedDescription
+                self?.playbackError = message
                 self?.advance(automatic: true)
             }
         }
@@ -337,7 +339,11 @@ final class PlaybackCoordinator: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            Task { @MainActor in self?.handleInterruption(notification) }
+            guard let typeRaw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt else { return }
+            let optionsRaw = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+            Task { @MainActor in
+                self?.handleInterruption(typeRaw: typeRaw, optionsRaw: optionsRaw)
+            }
         }
 
         routeObserver = NotificationCenter.default.addObserver(
@@ -345,26 +351,24 @@ final class PlaybackCoordinator: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            Task { @MainActor in self?.handleRouteChange(notification) }
+            guard let reasonRaw = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt else { return }
+            Task { @MainActor in self?.handleRouteChange(reasonRaw: reasonRaw) }
         }
     }
 
-    private func handleInterruption(_ notification: Notification) {
-        guard let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
-              let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+    private func handleInterruption(typeRaw: UInt, optionsRaw: UInt) {
+        guard let type = AVAudioSession.InterruptionType(rawValue: typeRaw) else { return }
         if type == .began {
             shouldResumeAfterInterruption = isPlaying
             pause()
         } else if shouldResumeAfterInterruption,
-                  let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt,
-                  AVAudioSession.InterruptionOptions(rawValue: rawOptions).contains(.shouldResume) {
+                  AVAudioSession.InterruptionOptions(rawValue: optionsRaw).contains(.shouldResume) {
             resume()
         }
     }
 
-    private func handleRouteChange(_ notification: Notification) {
-        guard let raw = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
-              AVAudioSession.RouteChangeReason(rawValue: raw) == .oldDeviceUnavailable else { return }
+    private func handleRouteChange(reasonRaw: UInt) {
+        guard AVAudioSession.RouteChangeReason(rawValue: reasonRaw) == .oldDeviceUnavailable else { return }
         pause()
     }
 
@@ -402,25 +406,32 @@ final class PlaybackCoordinator: ObservableObject {
         }
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
-            Task { @MainActor in self?.seek(to: event.positionTime) }
+            let positionTime = event.positionTime
+            Task { @MainActor in self?.seek(to: positionTime) }
             return .success
         }
         center.changeRepeatModeCommand.addTarget { [weak self] event in
             guard let event = event as? MPChangeRepeatModeCommandEvent else { return .commandFailed }
+            let repeatModeName: String
+            switch event.repeatType {
+            case .off: repeatModeName = "off"
+            case .one: repeatModeName = "one"
+            case .all: repeatModeName = "all"
+            @unknown default: repeatModeName = "off"
+            }
             Task { @MainActor in
-                switch event.repeatType {
-                case .off: self?.repeatMode = .off
-                case .one: self?.repeatMode = .one
-                case .all: self?.repeatMode = .all
-                @unknown default: self?.repeatMode = .off
+                switch repeatModeName {
+                case "one": self?.repeatMode = .one
+                case "all": self?.repeatMode = .all
+                default: self?.repeatMode = .off
                 }
             }
             return .success
         }
         center.changeShuffleModeCommand.addTarget { [weak self] event in
             guard let event = event as? MPChangeShuffleModeCommandEvent else { return .commandFailed }
+            let shouldShuffle = event.shuffleType != .off
             Task { @MainActor in
-                let shouldShuffle = event.shuffleType != .off
                 if self?.isShuffleEnabled != shouldShuffle { self?.toggleShuffle() }
             }
             return .success
