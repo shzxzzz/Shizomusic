@@ -97,10 +97,15 @@ final class LocalMediaLibrary: ObservableObject {
         var failed: [String] = []
         let directory = musicDirectory
 
-        let existingFiles = (try? await Task.detached(priority: .userInitiated) { try Self.audioFiles(in: directory) }.value) ?? []
+        let existingFilesTask = Task.detached(
+            priority: .userInitiated,
+            operation: { try Self.audioFiles(in: directory) }
+        )
+        let existingFiles = (try? await existingFilesTask.value) ?? []
         var knownHashes = Set<String>()
         for file in existingFiles {
-            if let hash = try? await Task.detached(priority: .utility) { try Self.sha256(file) }.value { knownHashes.insert(hash) }
+            let hashTask = Task.detached(priority: .utility, operation: { try Self.sha256(file) })
+            if let hash = try? await hashTask.value { knownHashes.insert(hash) }
         }
 
         for (index, source) in urls.enumerated() {
@@ -113,11 +118,22 @@ final class LocalMediaLibrary: ObservableObject {
                 continue
             }
             do {
-                let hash = try await Task.detached(priority: .userInitiated) { try Self.sha256(source) }.value
+                let hash = try await Task.detached(
+                    priority: .userInitiated,
+                    operation: { try Self.sha256(source) }
+                ).value
                 guard knownHashes.insert(hash).inserted else { duplicates.append(filename); continue }
-                do { try await Task.detached(priority: .userInitiated) { try await Self.validateAudio(at: source) }.value }
+                do {
+                    try await Task.detached(
+                        priority: .userInitiated,
+                        operation: { try await Self.validateAudio(at: source) }
+                    ).value
+                }
                 catch { knownHashes.remove(hash); corrupted.append(filename); continue }
-                let destination = try await Task.detached(priority: .userInitiated) { try Self.copyDestination(for: source, in: directory) }.value
+                let destination = try await Task.detached(
+                    priority: .userInitiated,
+                    operation: { try Self.copyDestination(for: source, in: directory) }
+                ).value
                 imported.append(destination.lastPathComponent)
             } catch { failed.append(filename) }
         }
@@ -151,7 +167,10 @@ final class LocalMediaLibrary: ObservableObject {
         let directory = musicDirectory
         let artworkDirectory = self.artworkDirectory
         do {
-            let files = try await Task.detached(priority: .userInitiated) { try Self.regularFiles(in: directory) }.value
+            let files = try await Task.detached(
+                priority: .userInitiated,
+                operation: { try Self.regularFiles(in: directory) }
+            ).value
             let supported = files.filter { Self.supportedExtensions.contains($0.pathExtension.lowercased()) }
             let unsupported = files.filter { !Self.supportedExtensions.contains($0.pathExtension.lowercased()) }.map(\.lastPathComponent)
             var scanned: [ScannedMediaFile] = []
@@ -161,7 +180,10 @@ final class LocalMediaLibrary: ObservableObject {
             for (index, url) in supported.enumerated() {
                 progress = .init(phase: phase, completed: index, total: supported.count, filename: url.lastPathComponent)
                 do {
-                    let media = try await Task.detached(priority: .userInitiated) { try await Self.mediaFile(at: url, artworkDirectory: artworkDirectory) }.value
+                    let media = try await Task.detached(
+                        priority: .userInitiated,
+                        operation: { try await Self.mediaFile(at: url, artworkDirectory: artworkDirectory) }
+                    ).value
                     if !seenHashes.insert(media.contentHash).inserted { duplicates.append(url.lastPathComponent) }
                     scanned.append(media)
                 } catch { corrupted.append(url.lastPathComponent) }

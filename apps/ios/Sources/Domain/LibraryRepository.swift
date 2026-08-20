@@ -62,7 +62,7 @@ final class GRDBTrackRepository: TrackRepository, @unchecked Sendable {
                 )
             }
             let trackIDs = try String.fetchAll(db, sql: "SELECT trackID FROM artistCredit WHERE artistID = ?", arguments: [artistID])
-            for trackID in trackIDs { try rebuildFTS(trackID: trackID, db: db) }
+            for trackID in trackIDs { try Self.rebuildFTS(trackID: trackID, db: db) }
         }
     }
 
@@ -316,7 +316,7 @@ final class GRDBTrackRepository: TrackRepository, @unchecked Sendable {
             let releaseID: String? = row["releaseID"]
             let artworkPath: String? = row["artworkURL"]
             let filePath: String? = row["fileURL"]
-            PlayableTrack(
+            return PlayableTrack(
                 id: id,
                 title: title,
                 artist: artist,
@@ -345,14 +345,22 @@ final class GRDBTrackRepository: TrackRepository, @unchecked Sendable {
     }
 
     private static func mostFrequent(_ values: [String]) -> String? {
-        Dictionary(grouping: values) { $0.libraryNormalized }
-            .map { entry in (entry.key, entry.value[0], entry.value.count) }
-            .sorted {
-                $0.2 == $1.2
-                    ? $0.0.localizedStandardCompare($1.0) == .orderedAscending
-                    : $0.2 > $1.2
+        var grouped: [String: (displayName: String, count: Int)] = [:]
+        for value in values {
+            let normalized = value.libraryNormalized
+            if let existing = grouped[normalized] {
+                grouped[normalized] = (existing.displayName, existing.count + 1)
+            } else {
+                grouped[normalized] = (value, 1)
             }
-            .first?.1
+        }
+        let orderedKeys = grouped.keys.sorted { lhs, rhs in
+            guard let left = grouped[lhs], let right = grouped[rhs] else { return lhs < rhs }
+            if left.count != right.count { return left.count > right.count }
+            return lhs.localizedStandardCompare(rhs) == .orderedAscending
+        }
+        guard let key = orderedKeys.first else { return nil }
+        return grouped[key]?.displayName
     }
 }
 
