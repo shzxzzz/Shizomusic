@@ -67,7 +67,9 @@ struct CollectionDetailScreen: View {
         case .liked:
             tracks = []
         }
-        return tracks.map(CollectionTrackModel.init(playableTrack:))
+        return tracks.map { track in
+            CollectionTrackModel(playableTrack: track)
+        }
     }
 
     var body: some View {
