@@ -8,9 +8,11 @@ struct LibraryView: View {
     @StateObject private var playlistStore = PlaylistStore()
     @StateObject private var statisticsStore = StatisticsStore()
     @StateObject private var syncEngine: SyncEngine
+    @StateObject private var catalogTransfers: CatalogTransferManager
 
     init(authorization: AuthorizationStore) {
         _syncEngine = StateObject(wrappedValue: SyncEngine(authorization: authorization))
+        _catalogTransfers = StateObject(wrappedValue: CatalogTransferManager(authorization: authorization))
     }
 
     var body: some View {
@@ -61,6 +63,7 @@ struct LibraryView: View {
         .environmentObject(localLibrary)
         .environmentObject(playlistStore)
         .environmentObject(statisticsStore)
+        .environmentObject(catalogTransfers)
         .safeAreaInset(edge: .top, spacing: 0) {
             SyncStatusBanner(sync: syncEngine)
         }
@@ -69,11 +72,15 @@ struct LibraryView: View {
             await playlistStore.load()
             playback.replaceLibrary(localLibrary.tracks)
             await synchronize()
+            await catalogTransfers.synchronize()
+            await localLibrary.load()
         }
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(15))
                 await synchronize()
+                await catalogTransfers.synchronize()
+                await localLibrary.load()
             }
         }
         .onChange(of: localLibrary.tracks) {
@@ -83,11 +90,16 @@ struct LibraryView: View {
         .onChange(of: playlistStore.playlists) {
             Task { await synchronize() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .catalogLibraryDidChange)) { _ in
+            Task { await localLibrary.load() }
+        }
         .onChange(of: scenePhase) {
             guard scenePhase == .active else { return }
             Task {
                 await localLibrary.scan()
                 await synchronize()
+                await catalogTransfers.synchronize()
+                await localLibrary.load()
             }
         }
         .sheet(

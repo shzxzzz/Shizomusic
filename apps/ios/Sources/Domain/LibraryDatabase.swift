@@ -253,6 +253,36 @@ final class LibraryDatabase: @unchecked Sendable {
                 );
                 """)
         }
+        migrator.registerMigration("v6.shared-catalog-transfers") { db in
+            try db.execute(sql: """
+                ALTER TABLE trackSource ADD COLUMN sourceKind TEXT NOT NULL DEFAULT 'local';
+                ALTER TABLE trackSource ADD COLUMN remoteFileID TEXT;
+                ALTER TABLE trackSource ADD COLUMN remoteURL TEXT;
+                ALTER TABLE trackSource ADD COLUMN etag TEXT;
+                ALTER TABLE trackSource ADD COLUMN addedByName TEXT;
+                CREATE UNIQUE INDEX trackSource_remote_file ON trackSource(remoteFileID) WHERE remoteFileID IS NOT NULL;
+
+                CREATE TABLE mediaTransfer (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    trackID TEXT REFERENCES track(id) ON DELETE CASCADE,
+                    sourceID TEXT REFERENCES trackSource(id) ON DELETE CASCADE,
+                    contentHash TEXT NOT NULL,
+                    direction TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    progress DOUBLE NOT NULL DEFAULT 0,
+                    transferredBytes INTEGER NOT NULL DEFAULT 0,
+                    totalBytes INTEGER NOT NULL DEFAULT 0,
+                    uploadSessionID TEXT,
+                    nextPart INTEGER NOT NULL DEFAULT 1,
+                    resumeData BLOB,
+                    lastError TEXT,
+                    createdAt DATETIME NOT NULL,
+                    updatedAt DATETIME NOT NULL
+                );
+                CREATE INDEX mediaTransfer_state_updated ON mediaTransfer(state, updatedAt);
+                CREATE INDEX mediaTransfer_content_direction ON mediaTransfer(contentHash, direction);
+                """)
+        }
         return migrator
     }
 }

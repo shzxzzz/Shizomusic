@@ -40,8 +40,14 @@ struct ArtworkPalette: Equatable, Sendable {
 
 enum ArtworkPaletteExtractor {
     static func palette(artworkURL: URL?, fallbackName: String) async -> ArtworkPalette {
-        await Task.detached(priority: .userInitiated, operation: {
-            let image = artworkURL.flatMap { UIImage(contentsOfFile: $0.path) } ?? UIImage(named: fallbackName)
+        let remoteData: Data?
+        if let artworkURL, !artworkURL.isFileURL {
+            remoteData = try? await URLSession.shared.data(from: artworkURL).0
+        } else { remoteData = nil }
+        return await Task.detached(priority: .userInitiated, operation: {
+            let image = remoteData.flatMap(UIImage.init(data:))
+                ?? artworkURL.flatMap { $0.isFileURL ? UIImage(contentsOfFile: $0.path) : nil }
+                ?? UIImage(named: fallbackName)
             guard let ciImage = image.flatMap({ CIImage(image: $0) }) else { return .fallback }
             let extent = ciImage.extent
             let regions = [

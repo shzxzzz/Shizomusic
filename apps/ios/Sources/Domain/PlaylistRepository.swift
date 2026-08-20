@@ -90,8 +90,19 @@ actor GRDBPlaylistRepository: PlaylistRepository {
     }
 
     func setCustomCover(id: UUID, fileURL: URL) async throws {
-        let coverData = try Data(contentsOf: fileURL).base64EncodedString()
-        try await update(id: id, column: "customCoverPath", value: fileURL.path, customCoverOverride: .replace(coverData))
+        let data = try Data(contentsOf: fileURL)
+        guard !data.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("ShizoMusic/PlaylistArtwork", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let storedURL = root.appendingPathComponent("\(id.uuidString).image")
+        try data.write(to: storedURL, options: .atomic)
+        try await update(
+            id: id,
+            column: "customCoverPath",
+            value: storedURL.path,
+            customCoverOverride: .replace(data.base64EncodedString())
+        )
     }
 
     func delete(id: UUID) async throws {

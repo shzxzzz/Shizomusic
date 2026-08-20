@@ -4,7 +4,9 @@ import SwiftUI
 struct MusicLibraryView: View {
     @EnvironmentObject private var localLibrary: LocalMediaLibrary
     @EnvironmentObject private var playlistStore: PlaylistStore
+    @EnvironmentObject private var catalogTransfers: CatalogTransferManager
     @State private var showsCreatePlaylist = false
+    @State private var showsTransfers = false
 
     private var releases: [LocalRelease] { localLibrary.releases }
     private var topArtists: [LocalArtist] { localLibrary.artists.sorted { $0.durationSeconds > $1.durationSeconds } }
@@ -65,6 +67,7 @@ struct MusicLibraryView: View {
             .presentationDetents([.medium])
             .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $showsTransfers) { DownloadManagementScreen() }
         .preferredColorScheme(.dark)
     }
 
@@ -78,6 +81,11 @@ struct MusicLibraryView: View {
                 .foregroundStyle(.white.opacity(0.48))
 
             Spacer()
+            Button { showsTransfers = true } label: {
+                Image(systemName: "arrow.up.arrow.down.circle")
+                    .font(.title3)
+            }
+            .accessibilityLabel(Text("downloads.title"))
         }
         .foregroundStyle(.white)
     }

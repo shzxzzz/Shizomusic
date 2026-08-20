@@ -86,6 +86,38 @@ struct APISyncPullResponse: Codable, Sendable {
     let hasMore: Bool
 }
 
+struct APICatalogTrack: Codable, Identifiable, Sendable {
+    struct AddedBy: Codable, Sendable { let id: UUID; let displayName: String }
+    let id: UUID
+    let contentHash: String
+    let byteSize: String
+    let mimeType: String
+    let filename: String
+    let status: String
+    let title: String
+    let artist: String
+    let album: String?
+    let albumArtist: String?
+    let duration: Double
+    let format: String?
+    let codec: String?
+    let addedBy: AddedBy
+    let streamPath: String
+    let artworkPath: String?
+    let createdAt: String
+}
+
+struct APIUploadSession: Codable, Sendable {
+    let id: UUID
+    let partSize: Int
+    let totalParts: Int
+    let uploadedParts: [Int]
+    let expiresAt: String
+    let alreadyAvailableFileId: UUID?
+}
+
+struct APIUploadCompletion: Codable, Sendable { let fileId: UUID; let contentHash: String; let status: String }
+
 struct GeneratedAPIClient: Sendable {
     let baseURL: URL
     var session: URLSession = .shared
@@ -147,6 +179,37 @@ struct GeneratedAPIClient: Sendable {
         return try await perform(request)
     }
 
+    func catalog(accessToken: String) async throws -> [APICatalogTrack] {
+        let response: CatalogResponse = try await get(path: "catalog", accessToken: accessToken)
+        return response.tracks
+    }
+
+    func createUpload(filename: String, mimeType: String, byteSize: Int64, sha256: String, accessToken: String) async throws -> APIUploadSession {
+        try await post(path: "catalog/uploads", body: UploadBody(filename: filename, mimeType: mimeType, byteSize: String(byteSize), sha256: sha256, partSize: 8 * 1_024 * 1_024), accessToken: accessToken)
+    }
+
+    func completeUpload(id: UUID, accessToken: String) async throws -> APIUploadCompletion {
+        try await post(path: "catalog/uploads/\(id.uuidString)/complete", body: EmptyBody(), accessToken: accessToken)
+    }
+
+    func cancelUpload(id: UUID, accessToken: String) async throws {
+        var request = URLRequest(url: baseURL.appending(path: "catalog/uploads/\(id.uuidString)"))
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        try await performWithoutResponse(request)
+    }
+
+    func uploadPartRequest(uploadID: UUID, partNumber: Int, sha256: String, accessToken: String) -> URLRequest {
+        var request = URLRequest(url: baseURL.appending(path: "catalog/uploads/\(uploadID.uuidString)/parts/\(partNumber)"))
+        request.httpMethod = "PUT"
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        request.setValue(sha256, forHTTPHeaderField: "X-Part-SHA256")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
+    func absoluteURL(path: String) -> URL { baseURL.appending(path: path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))) }
+
     private func get<Response: Decodable>(path: String, accessToken: String) async throws -> Response {
         var request = URLRequest(url: baseURL.appending(path: path))
         request.httpMethod = "GET"
@@ -203,4 +266,7 @@ struct GeneratedAPIClient: Sendable {
     private struct RefreshBody: Encodable { let refreshToken: String }
     private struct InvitationBody: Encodable { let expiresInHours: Int }
     private struct SyncPushBody: Encodable { let operations: [APISyncOperation] }
+    private struct UploadBody: Encodable { let filename: String; let mimeType: String; let byteSize: String; let sha256: String; let partSize: Int }
+    private struct CatalogResponse: Decodable { let tracks: [APICatalogTrack] }
+    private struct EmptyBody: Encodable {}
 }

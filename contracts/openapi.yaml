@@ -124,6 +124,82 @@ paths:
         '200': { description: Ordered change-log page, content: { application/json: { schema: { $ref: '#/components/schemas/SyncPullResponse' } } } }
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
+  /catalog:
+    get:
+      summary: List the shared group media catalog
+      operationId: listCatalog
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Shared catalog, content: { application/json: { schema: { type: object, required: [tracks], properties: { tracks: { type: array, items: { $ref: '#/components/schemas/CatalogTrack' } } } } } } }
+        '401': { $ref: '#/components/responses/Error' }
+  /catalog/uploads:
+    post:
+      summary: Create or resume a multipart upload
+      operationId: createCatalogUpload
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UploadRequest' } } } }
+      responses:
+        '200': { description: Upload session and existing parts, content: { application/json: { schema: { $ref: '#/components/schemas/UploadSession' } } } }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+  /catalog/uploads/{uploadId}/parts/{partNumber}:
+    put:
+      summary: Store one resumable upload part
+      operationId: putCatalogUploadPart
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: uploadId, required: true, schema: { type: string, format: uuid } }
+        - { in: path, name: partNumber, required: true, schema: { type: integer, minimum: 1 } }
+        - { in: header, name: X-Part-SHA256, required: true, schema: { type: string, pattern: '^[a-f0-9]{64}$' } }
+      requestBody: { required: true, content: { application/octet-stream: { schema: { type: string, format: binary } } } }
+      responses:
+        '204': { description: Part accepted }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+  /catalog/uploads/{uploadId}/complete:
+    post:
+      summary: Verify and finalize all uploaded parts
+      operationId: completeCatalogUpload
+      security: [{ bearerAuth: [] }]
+      parameters: [{ in: path, name: uploadId, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Content-addressed file, content: { application/json: { schema: { $ref: '#/components/schemas/UploadCompletion' } } } }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+  /catalog/uploads/{uploadId}:
+    delete:
+      summary: Cancel an upload and discard its parts
+      operationId: cancelCatalogUpload
+      security: [{ bearerAuth: [] }]
+      parameters: [{ in: path, name: uploadId, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '204': { description: Upload cancelled }
+        '401': { $ref: '#/components/responses/Error' }
+  /catalog/files/{contentHash}:
+    get:
+      summary: Stream an audio object with HTTP Range support
+      operationId: streamCatalogFile
+      parameters:
+        - { in: path, name: contentHash, required: true, schema: { type: string, pattern: '^[a-f0-9]{64}$' } }
+        - { in: header, name: Range, required: false, schema: { type: string } }
+        - { in: header, name: If-None-Match, required: false, schema: { type: string } }
+      responses:
+        '200': { description: Complete audio object, headers: { ETag: { schema: { type: string } }, Accept-Ranges: { schema: { type: string } } }, content: { audio/mpeg: { schema: { type: string, format: binary } }, audio/flac: { schema: { type: string, format: binary } } } }
+        '206': { description: Requested byte range }
+        '304': { description: ETag unchanged }
+        '416': { description: Requested range is outside the object, headers: { Content-Range: { schema: { type: string } } } }
+        '404': { $ref: '#/components/responses/Error' }
+  /catalog/files/{contentHash}/artwork:
+    get:
+      summary: Fetch artwork extracted from the audio object
+      operationId: catalogFileArtwork
+      parameters:
+        - { in: path, name: contentHash, required: true, schema: { type: string, pattern: '^[a-f0-9]{64}$' } }
+        - { in: header, name: If-None-Match, required: false, schema: { type: string } }
+      responses:
+        '200': { description: Extracted artwork, headers: { ETag: { schema: { type: string } } }, content: { image/jpeg: { schema: { type: string, format: binary } } } }
+        '304': { description: ETag unchanged }
+        '404': { $ref: '#/components/responses/Error' }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -252,6 +328,56 @@ components:
         changes: { type: array, items: { $ref: '#/components/schemas/SyncChange' } }
         cursor: { type: string, pattern: '^[0-9]+$' }
         hasMore: { type: boolean }
+    UploadRequest:
+      type: object
+      required: [filename, mimeType, byteSize, sha256]
+      properties:
+        filename: { type: string, maxLength: 240 }
+        mimeType: { type: string, enum: [audio/mpeg, audio/flac, audio/mp4, audio/aac, audio/wav] }
+        byteSize: { type: string, pattern: '^[1-9][0-9]*$' }
+        sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        partSize: { type: integer, minimum: 1048576, maximum: 16777216 }
+    UploadSession:
+      type: object
+      required: [id, partSize, totalParts, uploadedParts, expiresAt]
+      properties:
+        id: { type: string, format: uuid }
+        partSize: { type: integer }
+        totalParts: { type: integer }
+        uploadedParts: { type: array, items: { type: integer } }
+        expiresAt: { type: string, format: date-time }
+        alreadyAvailableFileId: { type: string, format: uuid }
+    UploadCompletion:
+      type: object
+      required: [fileId, contentHash, status]
+      properties:
+        fileId: { type: string, format: uuid }
+        contentHash: { type: string }
+        status: { type: string, enum: [processing, ready] }
+    CatalogTrack:
+      type: object
+      required: [id, contentHash, byteSize, mimeType, filename, status, title, artist, duration, addedBy, streamPath, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        contentHash: { type: string }
+        byteSize: { type: string }
+        mimeType: { type: string }
+        filename: { type: string }
+        status: { type: string, enum: [processing, ready, failed] }
+        title: { type: string }
+        artist: { type: string }
+        album: { type: [string, 'null'] }
+        albumArtist: { type: [string, 'null'] }
+        duration: { type: number }
+        format: { type: [string, 'null'] }
+        codec: { type: [string, 'null'] }
+        addedBy:
+          type: object
+          required: [id, displayName]
+          properties: { id: { type: string, format: uuid }, displayName: { type: string } }
+        streamPath: { type: string }
+        artworkPath: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
     Error:
       type: object
       required: [code, messageKey, requestID]

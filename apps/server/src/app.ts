@@ -6,12 +6,16 @@ import type { AuthPrincipal, AuthStore } from "./auth/models.js";
 import { issueOnboardingToken, verifyAccessToken, verifyOnboardingToken } from "./auth/security.js";
 import { MemorySyncStore } from "./sync/memory-store.js";
 import { validateOperation, type SyncStore } from "./sync/models.js";
+import { MemoryCatalogStore } from "./catalog/memory-store.js";
+import { registerCatalogRoutes } from "./catalog/routes.js";
+import type { CatalogStore } from "./catalog/models.js";
 
 interface BuildAppOptions {
   authStore?: AuthStore;
   readiness?: () => Promise<void>;
   bootstrapInvitationCode?: string;
   syncStore?: SyncStore;
+  catalogStore?: CatalogStore;
 }
 
 function requiredString(value: unknown, field: string): string {
@@ -26,8 +30,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const authStore = options.authStore ?? new MemoryAuthStore();
   const bootstrapCode = options.bootstrapInvitationCode ?? process.env.OWNER_INVITE_CODE ?? "OWNER-DEVELOPMENT";
   const syncStore = options.syncStore ?? new MemorySyncStore();
+  const catalogStore = options.catalogStore ?? new MemoryCatalogStore();
 
   app.register(cors, { origin: false });
+  app.addContentTypeParser("application/octet-stream", { parseAs: "buffer" }, (_request, body, done) => done(null, body));
   app.addHook("onReady", async () => { await authStore.ensureBootstrapInvitation(bootstrapCode); });
   app.setErrorHandler((error, request, reply) => {
     request.log.error(error);
@@ -36,8 +42,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       : typeof error === "object" && error !== null && "statusCode" in error && typeof error.statusCode === "number"
         ? error.statusCode
         : 500;
-    const code = error instanceof AuthError ? error.code : "internal_error";
-    const messageKey = error instanceof AuthError ? error.messageKey : "error.internal";
+    const structured = error as { code?: unknown; messageKey?: unknown };
+    const code = error instanceof AuthError ? error.code : typeof structured.code === "string" ? structured.code : "internal_error";
+    const messageKey = error instanceof AuthError ? error.messageKey : typeof structured.messageKey === "string" ? structured.messageKey : "error.internal";
     return reply.status(statusCode).send({ code, messageKey, requestID: request.id });
   });
 
@@ -139,6 +146,8 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 500) : 200;
     return syncStore.pull(actor, cursor, limit);
   });
+
+  registerCatalogRoutes(app, catalogStore, principal);
 
   return app;
 }

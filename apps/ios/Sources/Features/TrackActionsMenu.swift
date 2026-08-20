@@ -3,6 +3,10 @@ import SwiftUI
 struct TrackActionsMenu: View {
     @EnvironmentObject private var playback: PlaybackCoordinator
     @EnvironmentObject private var playlistStore: PlaylistStore
+    @EnvironmentObject private var catalogTransfers: CatalogTransferManager
+    @EnvironmentObject private var localLibrary: LocalMediaLibrary
+    @State private var confirmsLocalRemoval = false
+    @State private var remainingRemoteSources = 0
 
     let track: PlayableTrack
     var removeTitle: String? = nil
@@ -12,6 +16,19 @@ struct TrackActionsMenu: View {
         Menu {
             Button("collection.play_next") { playback.playNext(track) }
             Button("collection.add_to_queue") { playback.addToQueue(track) }
+            if let addedBy = track.addedByName {
+                Text("\(String(localized: "catalog.added_by")) \(addedBy)")
+            }
+            if let url = track.fileURL, !url.isFileURL {
+                Button("downloads.make_offline") { Task { await catalogTransfers.download(trackID: track.id) } }
+            } else if track.fileURL?.isFileURL == true {
+                Button("downloads.remove_local", role: .destructive) {
+                    Task {
+                        remainingRemoteSources = await catalogTransfers.remoteSourceCount(trackID: track.id)
+                        confirmsLocalRemoval = true
+                    }
+                }
+            }
 
             Menu("collection.add_to_playlist") {
                 if playlistStore.playlists.isEmpty {
@@ -70,5 +87,20 @@ struct TrackActionsMenu: View {
         }
         .accessibilityLabel(Text("collection.more_actions"))
         .accessibilityValue(Text(verbatim: track.title))
+        .confirmationDialog("downloads.remove_warning", isPresented: $confirmsLocalRemoval, titleVisibility: .visible) {
+            Button("downloads.remove_local", role: .destructive) {
+                Task {
+                    _ = await catalogTransfers.deleteLocalCopy(trackID: track.id)
+                    await localLibrary.load()
+                }
+            }
+            Button("common.cancel", role: .cancel) {}
+        } message: {
+            if remainingRemoteSources > 0 {
+                Text("downloads.remaining_sources_warning")
+            } else {
+                Text("downloads.no_remaining_source_warning")
+            }
+        }
     }
 }

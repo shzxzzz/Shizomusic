@@ -88,7 +88,9 @@ actor GRDBListeningStatisticsRepository: ListeningStatisticsRepository {
             sql: totalsCTE() + """
                 SELECT totals.trackID AS id, t.title, totals.listened, totals.qualified,
                        COALESCE((SELECT GROUP_CONCAT(a.name, ' & ') FROM artistCredit ac JOIN artist a ON a.id = ac.artistID WHERE ac.trackID = t.id), '') AS subtitle,
-                       COALESCE(ra.localURL, (SELECT ma.localURL FROM mediaAsset ma WHERE ma.trackID = t.id ORDER BY ma.createdAt LIMIT 1)) AS artworkURL
+                       COALESCE(ra.localURL, (SELECT ma.localURL FROM mediaAsset ma WHERE ma.trackID = t.id
+                        ORDER BY CASE WHEN ma.localURL LIKE 'http://%' OR ma.localURL LIKE 'https://%' THEN 1 ELSE 0 END,
+                        ma.createdAt DESC LIMIT 1)) AS artworkURL
                 FROM totals JOIN track t ON t.id = totals.trackID
                 LEFT JOIN releaseTrack rt ON rt.trackID = t.id
                 LEFT JOIN albumRelease r ON r.id = rt.releaseID
@@ -142,7 +144,7 @@ actor GRDBListeningStatisticsRepository: ListeningStatisticsRepository {
             id: row["id"],
             title: row["title"],
             subtitle: row["subtitle"],
-            artworkURL: artworkPath.map(URL.init(fileURLWithPath:)),
+            artworkURL: artworkPath.map(\.mediaSourceURL),
             listenedSeconds: row["listened"],
             qualifiedPlays: row["qualified"]
         )

@@ -59,8 +59,13 @@ actor GRDBPlaybackQueueRepository: PlaybackQueueRepository {
                            COALESCE((SELECT GROUP_CONCAT(name, ' & ') FROM (SELECT a.name AS name FROM artistCredit ac JOIN artist a ON a.id = ac.artistID WHERE ac.trackID = t.id ORDER BY ac.position)), ?) AS artistDisplay,
                            COALESCE((SELECT GROUP_CONCAT(name, char(31)) FROM (SELECT a.name AS name FROM artistCredit ac JOIN artist a ON a.id = ac.artistID WHERE ac.trackID = t.id ORDER BY ac.position)), '') AS artistNames,
                            r.id AS releaseID, r.title AS albumTitle, r.albumArtist,
-                           (SELECT sx.fileURL FROM trackSource sx WHERE sx.trackID = t.id AND sx.state = 'available' ORDER BY sx.modifiedAt DESC LIMIT 1) AS fileURL,
-                           COALESCE(ra.localURL, (SELECT ma.localURL FROM mediaAsset ma WHERE ma.trackID = t.id ORDER BY ma.createdAt LIMIT 1)) AS artworkURL
+                           (SELECT COALESCE(sx.remoteURL, sx.fileURL) FROM trackSource sx
+                            WHERE sx.trackID = t.id AND sx.state = 'available'
+                            ORDER BY CASE sx.sourceKind WHEN 'local' THEN 0 WHEN 'downloaded' THEN 1 ELSE 2 END, sx.modifiedAt DESC LIMIT 1) AS fileURL,
+                           (SELECT sx.addedByName FROM trackSource sx WHERE sx.trackID=t.id AND sx.sourceKind='remote' LIMIT 1) AS addedByName,
+                           COALESCE(ra.localURL, (SELECT ma.localURL FROM mediaAsset ma WHERE ma.trackID = t.id
+                            ORDER BY CASE WHEN ma.localURL LIKE 'http://%' OR ma.localURL LIKE 'https://%' THEN 1 ELSE 0 END,
+                            ma.createdAt DESC LIMIT 1)) AS artworkURL
                     FROM queueItem qi
                     JOIN track t ON t.id = qi.trackID
                     LEFT JOIN releaseTrack rt ON rt.trackID = t.id
@@ -92,8 +97,9 @@ actor GRDBPlaybackQueueRepository: PlaybackQueueRepository {
                         releaseID: row["releaseID"],
                         durationSeconds: max(Int(duration.rounded()), 0),
                         artworkName: "MistyLake",
-                        artworkURL: artworkPath.map(URL.init(fileURLWithPath:)),
-                        fileURL: filePath.map(URL.init(fileURLWithPath:))
+                        artworkURL: artworkPath.map(\.mediaSourceURL),
+                        fileURL: filePath.map(\.mediaSourceURL),
+                        addedByName: row["addedByName"]
                     ),
                     status: status,
                     position: row["position"]

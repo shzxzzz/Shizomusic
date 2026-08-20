@@ -38,6 +38,7 @@ struct PlayableTrack: Identifiable, Hashable, Codable, Sendable {
     let artworkName: String
     let artworkURL: URL?
     let fileURL: URL?
+    let addedByName: String?
 
     init(
         id: String,
@@ -50,7 +51,8 @@ struct PlayableTrack: Identifiable, Hashable, Codable, Sendable {
         durationSeconds: Int,
         artworkName: String,
         artworkURL: URL? = nil,
-        fileURL: URL? = nil
+        fileURL: URL? = nil,
+        addedByName: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -63,6 +65,7 @@ struct PlayableTrack: Identifiable, Hashable, Codable, Sendable {
         self.artworkName = artworkName
         self.artworkURL = artworkURL
         self.fileURL = fileURL
+        self.addedByName = addedByName
     }
 
     static let empty = PlayableTrack(
@@ -120,6 +123,8 @@ final class PlaybackCoordinator: ObservableObject {
     private var unflushedListenedSeconds = 0.0
     private var lastObservedPosition = 0.0
     private var qualifiedRecorded = false
+    private var nowPlayingArtworkURL: URL?
+    private var nowPlayingArtworkImage: UIImage?
 
     init(
         queueRepository: any PlaybackQueueRepository = GRDBPlaybackQueueRepository(),
@@ -673,9 +678,30 @@ final class PlaybackCoordinator: ObservableObject {
             MPNowPlayingInfoPropertyPlaybackQueueCount: queue.count,
             MPNowPlayingInfoPropertyPlaybackQueueIndex: currentIndex ?? 0
         ]
-        if let artworkURL = currentTrack.artworkURL,
-           let image = UIImage(contentsOfFile: artworkURL.path),
-           let artwork = makeMediaItemArtwork(from: image) {
+        let artworkImage: UIImage?
+        if let artworkURL = currentTrack.artworkURL, artworkURL.isFileURL {
+            artworkImage = UIImage(contentsOfFile: artworkURL.path)
+            nowPlayingArtworkURL = artworkURL
+            nowPlayingArtworkImage = artworkImage
+        } else if currentTrack.artworkURL == nowPlayingArtworkURL {
+            artworkImage = nowPlayingArtworkImage
+        } else {
+            artworkImage = nil
+            nowPlayingArtworkURL = currentTrack.artworkURL
+            nowPlayingArtworkImage = nil
+            if let artworkURL = currentTrack.artworkURL {
+                Task { [weak self] in
+                    guard let self,
+                          let data = try? await URLSession.shared.data(from: artworkURL).0,
+                          let image = UIImage(data: data),
+                          self.currentTrack.artworkURL == artworkURL else { return }
+                    self.nowPlayingArtworkImage = image
+                    self.updateNowPlaying()
+                }
+            }
+        }
+        if let artworkImage,
+           let artwork = makeMediaItemArtwork(from: artworkImage) {
             info[MPMediaItemPropertyArtwork] = artwork
         }
         nowPlayingSession.nowPlayingInfoCenter.nowPlayingInfo = info

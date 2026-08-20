@@ -2,6 +2,7 @@ import { DatabaseAuthStore } from "./auth/database-store.js";
 import { buildApp } from "./app.js";
 import { createDatabase } from "./db/client.js";
 import { DatabaseSyncStore } from "./sync/database-store.js";
+import { DatabaseCatalogStore } from "./catalog/database-store.js";
 
 const databaseURL = process.env.DATABASE_URL;
 if (!databaseURL) throw new Error("DATABASE_URL is required");
@@ -9,6 +10,7 @@ const { db, pool } = createDatabase(databaseURL);
 const app = buildApp({
   authStore: new DatabaseAuthStore(db),
   syncStore: new DatabaseSyncStore(db),
+  catalogStore: new DatabaseCatalogStore(db, process.env.MEDIA_STORAGE_ROOT ?? "/data"),
   readiness: async () => { await pool.query("select 1"); },
 });
 

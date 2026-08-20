@@ -10,6 +10,7 @@
     "dev": "tsx watch src/index.ts",
     "start:container": "npm run db:migrate && npm run dev",
     "start": "node dist/index.js",
+    "worker": "tsx src/worker.ts",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

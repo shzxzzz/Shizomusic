@@ -31,3 +31,9 @@ Playlist mutations and their `SyncOperation` outbox records are committed in one
 
 The device regression checklist is in
 [`PHYSICAL_DEVICE_TEST_PLAN.md`](PHYSICAL_DEVICE_TEST_PLAN.md).
+
+## Shared catalog and transfers
+
+After an authenticated scan, local sources are persisted as upload transfers and sent in resumable parts by a background `URLSession`. The server catalog is merged into the same logical `Track` records by content hash, while remote and downloaded files remain separate `TrackSource` rows. Playback chooses local, then downloaded, then remote streaming sources.
+
+Open the transfer manager from Library to inspect upload/download progress and use pause, resume, cancel, retry, or clear downloaded copies. Removing an offline copy keeps the logical track when a server source is available.

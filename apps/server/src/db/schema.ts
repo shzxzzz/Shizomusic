@@ -1,4 +1,5 @@
-import { bigint, bigserial, doublePrecision, index, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, bigserial, doublePrecision, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const userRole = pgEnum("user_role", ["owner", "member"]);
 
@@ -60,7 +61,7 @@ export const syncedPlaylists = pgTable("synced_playlists", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
-  version: bigint("version", { mode: "bigint" }).notNull().default(0n),
+  version: bigint("version", { mode: "bigint" }).notNull().default(sql`0`),
   lastOperationId: uuid("last_operation_id").notNull(),
 });
 
@@ -72,7 +73,7 @@ export const syncedPlaylistItems = pgTable("synced_playlist_items", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
-  version: bigint("version", { mode: "bigint" }).notNull().default(0n),
+  version: bigint("version", { mode: "bigint" }).notNull().default(sql`0`),
   lastOperationId: uuid("last_operation_id").notNull(),
 }, (table) => [index("synced_playlist_items_playlist_rank").on(table.playlistId, table.rank)]);
 
@@ -109,3 +110,63 @@ export const syncConflicts = pgTable("sync_conflicts", {
   serverPayload: jsonb("server_payload").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [index("sync_conflicts_operation_idx").on(table.operationId)]);
+
+export const catalogFiles = pgTable("catalog_files", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  contentHash: text("content_hash").notNull().unique(),
+  byteSize: bigint("byte_size", { mode: "bigint" }).notNull(),
+  mimeType: text("mime_type").notNull(),
+  storageKey: text("storage_key").notNull().unique(),
+  originalFilename: text("original_filename").notNull(),
+  status: text("status").notNull().default("processing"),
+  title: text("title"),
+  artist: text("artist"),
+  album: text("album"),
+  albumArtist: text("album_artist"),
+  duration: doublePrecision("duration"),
+  format: text("format"),
+  codec: text("codec"),
+  artworkStorageKey: text("artwork_storage_key"),
+  artworkMimeType: text("artwork_mime_type"),
+  probeError: text("probe_error"),
+  addedByUserId: uuid("added_by_user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("catalog_files_status_created_idx").on(table.status, table.createdAt)]);
+
+export const uploadSessions = pgTable("upload_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  deviceId: uuid("device_id").notNull().references(() => devices.id, { onDelete: "cascade" }),
+  expectedHash: text("expected_hash").notNull(),
+  expectedSize: bigint("expected_size", { mode: "bigint" }).notNull(),
+  mimeType: text("mime_type").notNull(),
+  filename: text("filename").notNull(),
+  partSize: integer("part_size").notNull(),
+  totalParts: integer("total_parts").notNull(),
+  state: text("state").notNull().default("uploading"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+}, (table) => [index("upload_sessions_user_state_idx").on(table.userId, table.state)]);
+
+export const uploadParts = pgTable("upload_parts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  uploadId: uuid("upload_id").notNull().references(() => uploadSessions.id, { onDelete: "cascade" }),
+  partNumber: integer("part_number").notNull(),
+  byteSize: bigint("byte_size", { mode: "bigint" }).notNull(),
+  sha256: text("sha256").notNull(),
+  storagePath: text("storage_path").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [uniqueIndex("upload_parts_upload_number_unique").on(table.uploadId, table.partNumber)]);
+
+export const mediaJobs = pgTable("media_jobs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  catalogFileId: uuid("catalog_file_id").notNull().references(() => catalogFiles.id, { onDelete: "cascade" }),
+  state: text("state").notNull().default("pending"),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("media_jobs_ready_idx").on(table.state, table.nextAttemptAt)]);
