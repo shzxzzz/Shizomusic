@@ -3,8 +3,31 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "engines": { "node": ">=24 <25" },
-  "scripts": { "dev": "tsx watch src/index.ts", "start": "node dist/index.js", "build": "tsc -p tsconfig.json", "test": "vitest run", "typecheck": "tsc --noEmit" },
-  "dependencies": { "@fastify/cors": "^11.0.0", "fastify": "^5.0.0" },
-  "devDependencies": { "@types/node": "^24.0.0", "tsx": "^4.0.0", "typescript": "^5.0.0", "vitest": "^3.0.0" }
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start:container": "npm run db:migrate && npm run dev",
+    "start": "node dist/index.js",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.0.0",
+    "drizzle-orm": "^0.45.2",
+    "fastify": "^5.0.0",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.0.0"
+  }
 }

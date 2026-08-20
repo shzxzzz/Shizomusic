@@ -16,6 +16,7 @@ struct Playlist: Identifiable, Hashable, Sendable {
     let id: UUID
     var title: String
     var coverStyle: PlaylistCoverStyle
+    var customCoverURL: URL?
     var items: [PlaylistItem]
     let createdAt: Date
     var updatedAt: Date
@@ -29,6 +30,7 @@ protocol PlaylistRepository: Sendable {
     func rename(id: UUID, title: String) async throws
     func delete(id: UUID) async throws
     func changeCover(id: UUID, coverStyle: PlaylistCoverStyle) async throws
+    func setCustomCover(id: UUID, fileURL: URL) async throws
     func add(trackID: String, to playlistID: UUID) async throws -> UUID
     func remove(itemID: UUID) async throws
     func move(itemID: UUID, to destinationIndex: Int) async throws

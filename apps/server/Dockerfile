@@ -3,6 +3,8 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install
 COPY tsconfig.json ./
+COPY drizzle.config.ts ./
+COPY drizzle ./drizzle
 COPY src ./src
 EXPOSE 3000
-CMD ["npm", "run", "dev"]
+CMD ["npm", "run", "start:container"]

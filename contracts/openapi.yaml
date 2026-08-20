@@ -1,36 +1,180 @@
 openapi: 3.1.0
 info:
   title: ShizoMusic API
-  version: 0.1.0
-  description: Contract for the private ShizoMusic installation.
+  version: 0.2.0
+  description: Private invitation-only ShizoMusic installation.
+  license: { name: Private }
 servers:
   - url: https://shizomusic.example.ts.net
+security: []
 paths:
   /health:
     get:
+      summary: Check process health
       operationId: health
       responses:
-        '200':
-          description: API process is alive.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Status' }
+        '200': { description: Alive, content: { application/json: { schema: { $ref: '#/components/schemas/Status' } } } }
   /ready:
     get:
+      summary: Check dependency readiness
       operationId: ready
       responses:
+        '200': { description: Dependencies ready, content: { application/json: { schema: { $ref: '#/components/schemas/Status' } } } }
+  /auth/invitations/redeem:
+    post:
+      summary: Validate a one-time invitation
+      operationId: redeemInvitation
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RedeemInvitationRequest' } } } }
+      responses:
+        '200': { description: Invitation accepted for onboarding, content: { application/json: { schema: { $ref: '#/components/schemas/OnboardingTicket' } } } }
+        '400': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+  /auth/onboarding/complete:
+    post:
+      summary: Create a user and authorize an iPhone
+      operationId: completeOnboarding
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CompleteOnboardingRequest' } } } }
+      responses:
+        '200': { description: Device authorized, content: { application/json: { schema: { $ref: '#/components/schemas/AuthSession' } } } }
+        '401': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+  /auth/refresh:
+    post:
+      summary: Rotate a refresh token
+      operationId: refreshSession
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RefreshRequest' } } } }
+      responses:
+        '200': { description: Rotated token pair, content: { application/json: { schema: { $ref: '#/components/schemas/AuthSession' } } } }
+        '401': { $ref: '#/components/responses/Error' }
+  /auth/logout:
+    post:
+      summary: Revoke a refresh token
+      operationId: logout
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RefreshRequest' } } } }
+      responses:
+        '204': { description: Refresh token revoked }
+  /me:
+    get:
+      summary: Get the current user
+      operationId: currentUser
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Current user, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+        '401': { $ref: '#/components/responses/Error' }
+  /admin/invitations:
+    post:
+      summary: Create a one-time member invitation
+      operationId: createInvitation
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateInvitationRequest' } } } }
+      responses:
+        '200': { description: One-time invitation, content: { application/json: { schema: { $ref: '#/components/schemas/Invitation' } } } }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/devices:
+    get:
+      summary: List authorized devices
+      operationId: listDevices
+      security: [{ bearerAuth: [] }]
+      responses:
         '200':
-          description: API dependencies are ready.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Status' }
+          description: All authorized devices
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Device' } } } }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/devices/{deviceId}/revoke:
+    post:
+      summary: Revoke one device
+      operationId: revokeDevice
+      security: [{ bearerAuth: [] }]
+      parameters: [{ in: path, name: deviceId, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '204': { description: Device and its refresh tokens revoked }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/users/{userId}/revoke:
+    post:
+      summary: Revoke a user and every device
+      operationId: revokeUser
+      security: [{ bearerAuth: [] }]
+      parameters: [{ in: path, name: userId, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '204': { description: User and all devices revoked }
+        '403': { $ref: '#/components/responses/Error' }
 components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  responses:
+    Error:
+      description: API error
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   schemas:
     Status:
       type: object
       required: [status]
+      properties: { status: { type: string, enum: [ok, ready] } }
+    RedeemInvitationRequest:
+      type: object
+      required: [code, deviceIdentifier, deviceName]
       properties:
-        status: { type: string, enum: [ok, ready] }
+        code: { type: string }
+        deviceIdentifier: { type: string }
+        deviceName: { type: string }
+    OnboardingTicket:
+      type: object
+      required: [onboardingToken, expiresInSeconds]
+      properties:
+        onboardingToken: { type: string }
+        expiresInSeconds: { type: integer }
+    CompleteOnboardingRequest:
+      type: object
+      required: [onboardingToken, displayName]
+      properties:
+        onboardingToken: { type: string }
+        displayName: { type: string, maxLength: 80 }
+        avatarData: { type: [string, 'null'], contentEncoding: base64 }
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties: { refreshToken: { type: string } }
+    CreateInvitationRequest:
+      type: object
+      required: [expiresInHours]
+      properties: { expiresInHours: { type: integer, minimum: 1, maximum: 720 } }
+    Invitation:
+      type: object
+      required: [code, expiresAt]
+      properties:
+        code: { type: string }
+        expiresAt: { type: string, format: date-time }
+    User:
+      type: object
+      required: [id, displayName, role]
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+        avatarData: { type: [string, 'null'], contentEncoding: base64 }
+        role: { type: string, enum: [owner, member] }
+    Device:
+      type: object
+      required: [id, userId, name, createdAt, lastSeenAt]
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        name: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }
+        revokedAt: { type: [string, 'null'], format: date-time }
+    AuthSession:
+      allOf:
+        - type: object
+          required: [accessToken, refreshToken, accessExpiresAt, refreshExpiresAt, user, device]
+          properties:
+            accessToken: { type: string }
+            refreshToken: { type: string }
+            accessExpiresAt: { type: string, format: date-time }
+            refreshExpiresAt: { type: string, format: date-time }
+            user: { $ref: '#/components/schemas/User' }
+            device: { $ref: '#/components/schemas/Device' }
     Error:
       type: object
       required: [code, messageKey, requestID]

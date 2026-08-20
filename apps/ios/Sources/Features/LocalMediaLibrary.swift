@@ -1,6 +1,7 @@
 import AVFoundation
 import CryptoKit
 import Foundation
+import UIKit
 
 struct MediaLibraryProgress: Equatable, Sendable {
     enum Phase: String, Sendable { case scanning, importing }
@@ -253,7 +254,12 @@ final class LocalMediaLibrary: ObservableObject {
                   let data = try? await item.load(.dataValue), !data.isEmpty else { continue }
             let hash = sha256(data)
             let destination = directory.appendingPathComponent("\(hash).image")
-            if !FileManager.default.fileExists(atPath: destination.path) { try? data.write(to: destination, options: .atomic) }
+            guard UIImage(data: data) != nil else { continue }
+            if UIImage(contentsOfFile: destination.path) == nil {
+                do { try data.write(to: destination, options: .atomic) }
+                catch { continue }
+            }
+            guard UIImage(contentsOfFile: destination.path) != nil else { continue }
             return (destination, hash)
         }
         return nil

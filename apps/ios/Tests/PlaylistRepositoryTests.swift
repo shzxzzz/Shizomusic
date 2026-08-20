@@ -4,7 +4,7 @@ import Testing
 @testable import ShizoMusic
 
 struct PlaylistRepositoryTests {
-    @Test func playlistPersistsDuplicatesStableItemsAndFractionalOrder() async throws {
+    @Test func playlistPreventsDuplicatesAndPersistsStableItemsAndCover() async throws {
         let path = FileManager.default.temporaryDirectory
             .appendingPathComponent("shizomusic-playlist-\(UUID().uuidString).sqlite").path
         let database = try LibraryDatabase(path: path)
@@ -34,18 +34,19 @@ struct PlaylistRepositoryTests {
 
         var allPlaylists = try await playlists.fetchAll()
         var snapshot = try #require(allPlaylists.first)
-        #expect(snapshot.items.map(\.id) == [firstID, secondID])
-        #expect(snapshot.items.map(\.track.id) == [track.id, track.id])
+        #expect(firstID == secondID)
+        #expect(snapshot.items.map(\.id) == [firstID])
+        #expect(snapshot.items.map(\.track.id) == [track.id])
 
-        try await playlists.move(itemID: secondID, to: 0)
         try await playlists.rename(id: playlistID, title: "Renamed")
         try await playlists.changeCover(id: playlistID, coverStyle: .sunset)
+        let customCover = URL(fileURLWithPath: "/tmp/custom-playlist-cover.png")
+        try await playlists.setCustomCover(id: playlistID, fileURL: customCover)
         allPlaylists = try await playlists.fetchAll()
         snapshot = try #require(allPlaylists.first)
-        #expect(snapshot.items.map(\.id) == [secondID, firstID])
-        #expect(snapshot.items[0].rank < snapshot.items[1].rank)
         #expect(snapshot.title == "Renamed")
         #expect(snapshot.coverStyle == .sunset)
+        #expect(snapshot.customCoverURL == customCover)
 
         try await playlists.delete(id: playlistID)
         allPlaylists = try await playlists.fetchAll()

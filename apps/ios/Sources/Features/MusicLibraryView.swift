@@ -288,7 +288,7 @@ private struct PlaylistTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            LibraryArtwork(style: playlist.coverStyle)
+            LibraryArtwork(style: playlist.coverStyle, customCoverURL: playlist.customCoverURL)
                 .aspectRatio(1, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(alignment: .bottomLeading) {
@@ -396,16 +396,23 @@ private struct ArtistAvatar: View {
 
 struct LibraryArtwork: View {
     let style: PlaylistCoverStyle
+    var customCoverURL: URL? = nil
 
     var body: some View {
         ZStack {
-            artworkBackground
+            if let customCoverURL {
+                TrackArtworkView(artworkURL: customCoverURL, fallbackName: "MistyLake")
+                    .scaledToFill()
+            } else {
+                artworkBackground
 
-            Image(systemName: style.symbol)
-                .font(.system(size: 26, weight: .medium))
-                .foregroundStyle(.white.opacity(0.74))
-                .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+                Image(systemName: style.symbol)
+                    .font(.system(size: 26, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.74))
+                    .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+            }
         }
+        .clipped()
     }
 
     @ViewBuilder

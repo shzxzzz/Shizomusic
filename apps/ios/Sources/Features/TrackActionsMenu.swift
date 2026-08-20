@@ -21,8 +21,13 @@ struct TrackActionsMenu: View {
                         Button {
                             Task { await playlistStore.add(track: track, to: playlist.id) }
                         } label: {
-                            Text(verbatim: playlist.title)
+                            if playlist.items.contains(where: { $0.track.id == track.id }) {
+                                Label(playlist.title, systemImage: "checkmark")
+                            } else {
+                                Text(verbatim: playlist.title)
+                            }
                         }
+                        .disabled(playlist.items.contains(where: { $0.track.id == track.id }))
                     }
                 }
             }

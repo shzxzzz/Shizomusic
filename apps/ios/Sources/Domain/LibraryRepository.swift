@@ -236,7 +236,13 @@ final class GRDBTrackRepository: TrackRepository, @unchecked Sendable {
             db,
             sql: "SELECT id FROM mediaAsset WHERE contentHash = ? AND COALESCE(releaseID, '') = COALESCE(?, '') LIMIT 1",
             arguments: [hash, releaseID]
-        ) { return id }
+        ) {
+            try db.execute(
+                sql: "UPDATE mediaAsset SET localURL = ?, trackID = COALESCE(trackID, ?) WHERE id = ?",
+                arguments: [localURL, trackID, id]
+            )
+            return id
+        }
         let id = UUID().uuidString
         try db.execute(
             sql: "INSERT INTO mediaAsset(id, trackID, releaseID, kind, localURL, contentHash, mimeType, createdAt) VALUES (?, ?, ?, 'artwork', ?, ?, NULL, ?)",

@@ -30,6 +30,7 @@ struct FriendsScreenState: Sendable {
     )
 }
 struct FriendsScreen: View {
+    @EnvironmentObject private var authorization: AuthorizationStore
     @State private var state: FriendsScreenState
     @State private var path: [FriendProfileDestination] = []
 
@@ -126,6 +127,23 @@ struct FriendsScreen: View {
                 prompt: Text("friends.search_placeholder")
             )
             .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbar {
+                if authorization.currentUser?.role == .owner {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        NavigationLink(destination: AccessManagementScreen()) {
+                            Image(systemName: "person.badge.key.fill")
+                        }
+                        .accessibilityLabel(Text("auth.access_management"))
+                    }
+                } else if case .localOnly = authorization.phase {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(action: authorization.leaveLocalOnly) {
+                            Image(systemName: "person.badge.key.fill")
+                        }
+                        .accessibilityLabel(Text("auth.connect_server"))
+                    }
+                }
+            }
             .navigationDestination(for: FriendProfileDestination.self) { destination in
                 FriendProfileScreen(destination: destination)
             }
@@ -352,16 +370,20 @@ struct FriendModel: Identifiable, Hashable, Sendable {
 
 #Preview("Friends") {
     FriendsScreen()
+        .environmentObject(AuthorizationStore())
 }
 
 #Preview("Friends nobody online") {
     FriendsScreen(state: .nobodyOnline)
+        .environmentObject(AuthorizationStore())
 }
 
 #Preview("Friends empty") {
     FriendsScreen(state: .empty)
+        .environmentObject(AuthorizationStore())
 }
 
 #Preview("Friends search empty") {
     FriendsScreen(state: .noSearchResults)
+        .environmentObject(AuthorizationStore())
 }

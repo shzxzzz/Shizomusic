@@ -6,6 +6,7 @@ struct LibraryView: View {
     @StateObject private var playback = PlaybackCoordinator()
     @StateObject private var localLibrary = LocalMediaLibrary()
     @StateObject private var playlistStore = PlaylistStore()
+    @StateObject private var statisticsStore = StatisticsStore()
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -38,6 +39,14 @@ struct LibraryView: View {
                 .tabItem {
                     Label("tab.friends", systemImage: "person.2.fill")
                 }
+
+            NonPlayerTabShell(onOpenPlayer: { selectedTab = .player }) {
+                StatisticsScreen()
+            }
+                .tag(AppTab.statistics)
+                .tabItem {
+                    Label("tab.statistics", systemImage: "chart.bar.xaxis")
+                }
         }
         .tint(.white)
         .toolbarBackground(.ultraThinMaterial, for: .tabBar)
@@ -46,6 +55,7 @@ struct LibraryView: View {
         .environmentObject(playback)
         .environmentObject(localLibrary)
         .environmentObject(playlistStore)
+        .environmentObject(statisticsStore)
         .task {
             await localLibrary.scan()
             await playlistStore.load()
@@ -108,6 +118,7 @@ private enum AppTab: Hashable {
     case library
     case search
     case friends
+    case statistics
 }
 
 private struct PlayerScreen: View {

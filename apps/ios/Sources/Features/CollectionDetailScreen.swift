@@ -211,6 +211,7 @@ struct CollectionDetailScreen: View {
                 artwork: model.heroArtwork ?? .violet,
                 artworkURL: model.kind == .release ? displayedTracks.compactMap(\.artworkURL).first : nil,
                 playlistCoverStyle: playlist?.coverStyle,
+                playlistCoverURL: playlist?.customCoverURL,
                 compactArtwork: dynamicTypeSize.isAccessibilitySize
             )
         case .offline:
@@ -504,6 +505,7 @@ private struct PlaylistCollectionHero: View {
     let artwork: CollectionHeroArtwork
     let artworkURL: URL?
     let playlistCoverStyle: PlaylistCoverStyle?
+    let playlistCoverURL: URL?
     let compactArtwork: Bool
 
     private var artworkSize: CGFloat {
@@ -516,7 +518,7 @@ private struct PlaylistCollectionHero: View {
                 if let artworkURL {
                     TrackArtworkView(artworkURL: artworkURL, fallbackName: "MistyLake").scaledToFill()
                 } else if let playlistCoverStyle {
-                    LibraryArtwork(style: playlistCoverStyle)
+                    LibraryArtwork(style: playlistCoverStyle, customCoverURL: playlistCoverURL)
                 } else {
                     CollectionHeroArtworkView(artwork: artwork)
                 }

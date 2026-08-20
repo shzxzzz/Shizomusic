@@ -162,6 +162,39 @@ final class LibraryDatabase: @unchecked Sendable {
                 CREATE INDEX playlistItem_trackID ON playlistItem(trackID);
                 """)
         }
+        migrator.registerMigration("v3.analytics-and-playlist-covers") { db in
+            try db.execute(sql: "ALTER TABLE playlist ADD COLUMN customCoverPath TEXT")
+            try db.execute(sql: """
+                DELETE FROM playlistItem
+                WHERE id NOT IN (
+                    SELECT id FROM (
+                        SELECT id, ROW_NUMBER() OVER (
+                            PARTITION BY playlistID, trackID
+                            ORDER BY rank, createdAt, id
+                        ) AS rowNumber
+                        FROM playlistItem
+                    ) WHERE rowNumber = 1
+                );
+                CREATE UNIQUE INDEX playlistItem_unique_track ON playlistItem(playlistID, trackID);
+
+                CREATE TABLE listeningEvent (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    sessionID TEXT NOT NULL,
+                    trackID TEXT NOT NULL REFERENCES track(id),
+                    eventType TEXT NOT NULL,
+                    occurredAt DATETIME NOT NULL,
+                    position DOUBLE NOT NULL,
+                    fromPosition DOUBLE,
+                    toPosition DOUBLE,
+                    listenedSeconds DOUBLE NOT NULL DEFAULT 0,
+                    contextType TEXT NOT NULL,
+                    contextID TEXT
+                );
+                CREATE INDEX listeningEvent_session ON listeningEvent(sessionID, occurredAt);
+                CREATE INDEX listeningEvent_track_date ON listeningEvent(trackID, occurredAt);
+                CREATE INDEX listeningEvent_type_date ON listeningEvent(eventType, occurredAt);
+                """)
+        }
         return migrator
     }
 }

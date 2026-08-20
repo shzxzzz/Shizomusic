@@ -37,10 +37,12 @@ actor GRDBPlaylistRepository: PlaylistRepository {
                     )
                 }
                 let coverValue: String = row["coverStyle"]
+                let customCoverPath: String? = row["customCoverPath"]
                 return Playlist(
                     id: id,
                     title: row["title"],
                     coverStyle: PlaylistCoverStyle(rawValue: coverValue) ?? .violet,
+                    customCoverURL: customCoverPath.map(URL.init(fileURLWithPath:)),
                     items: items,
                     createdAt: row["createdAt"],
                     updatedAt: row["updatedAt"]
@@ -66,7 +68,16 @@ actor GRDBPlaylistRepository: PlaylistRepository {
     }
 
     func changeCover(id: UUID, coverStyle: PlaylistCoverStyle) async throws {
-        try await update(id: id, column: "coverStyle", value: coverStyle.rawValue)
+        try await database.writer.write { db in
+            try db.execute(
+                sql: "UPDATE playlist SET coverStyle = ?, customCoverPath = NULL, updatedAt = ? WHERE id = ?",
+                arguments: [coverStyle.rawValue, Date(), id.uuidString]
+            )
+        }
+    }
+
+    func setCustomCover(id: UUID, fileURL: URL) async throws {
+        try await update(id: id, column: "customCoverPath", value: fileURL.path)
     }
 
     func delete(id: UUID) async throws {
@@ -76,8 +87,15 @@ actor GRDBPlaylistRepository: PlaylistRepository {
     }
 
     func add(trackID: String, to playlistID: UUID) async throws -> UUID {
-        let itemID = UUID()
         try await database.writer.write { db in
+            if let existing = try String.fetchOne(
+                db,
+                sql: "SELECT id FROM playlistItem WHERE playlistID = ? AND trackID = ? LIMIT 1",
+                arguments: [playlistID.uuidString, trackID]
+            ), let existingID = UUID(uuidString: existing) {
+                return existingID
+            }
+            let itemID = UUID()
             let lastRank = try Double.fetchOne(
                 db,
                 sql: "SELECT rank FROM playlistItem WHERE playlistID = ? ORDER BY rank DESC LIMIT 1",
@@ -88,8 +106,8 @@ actor GRDBPlaylistRepository: PlaylistRepository {
                 arguments: [itemID.uuidString, playlistID.uuidString, trackID, (lastRank ?? 0) + Self.rankStep, Date()]
             )
             try Self.touch(playlistID, db: db)
+            return itemID
         }
-        return itemID
     }
 
     func remove(itemID: UUID) async throws {

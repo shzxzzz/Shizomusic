@@ -113,13 +113,21 @@ final class PlaybackCoordinator: ObservableObject {
     private var shouldResumeAfterInterruption = false
     private var isRestoring = true
     private let queueRepository: any PlaybackQueueRepository
+    private let statisticsRepository: any ListeningStatisticsRepository
     private var persistenceTask: Task<Void, Never>?
+    private var listeningSessionID: UUID?
+    private var listenedSeconds = 0.0
+    private var unflushedListenedSeconds = 0.0
+    private var lastObservedPosition = 0.0
+    private var qualifiedRecorded = false
 
     init(
         queueRepository: any PlaybackQueueRepository = GRDBPlaybackQueueRepository(),
+        statisticsRepository: any ListeningStatisticsRepository = GRDBListeningStatisticsRepository(),
         restoresQueue: Bool = true
     ) {
         self.queueRepository = queueRepository
+        self.statisticsRepository = statisticsRepository
         configureAudioSession()
         observePlayer()
         configureRemoteCommands()
@@ -199,6 +207,7 @@ final class PlaybackCoordinator: ObservableObject {
     ) {
         guard tracks.indices.contains(index) else { return }
         playbackError = nil
+        finishListeningSession(as: .skip)
         queueContext = context
         playbackHistory.removeAll()
         if isShuffleEnabled {
@@ -224,10 +233,14 @@ final class PlaybackCoordinator: ObservableObject {
             return
         }
         do {
+            let isResumingSession = listeningSessionID != nil
+            if !isResumingSession { startListeningSession() }
             try AVAudioSession.sharedInstance().setActive(true)
             nowPlayingSession.becomeActiveIfPossible(completion: nil)
             player.play()
             isPlaying = true
+            lastObservedPosition = elapsedSeconds
+            if isResumingSession { emitListeningEvent(.resumed) }
             updateNowPlaying()
         } catch {
             playbackError = error.localizedDescription
@@ -235,17 +248,35 @@ final class PlaybackCoordinator: ObservableObject {
     }
 
     func pause() {
+        pause(recording: .paused)
+    }
+
+    private func pause(recording kind: ListeningEventKind) {
+        guard isPlaying else {
+            player.pause()
+            return
+        }
+        accountPlayback(to: elapsedSeconds)
         player.pause()
         isPlaying = false
+        emitListeningEvent(kind)
         updateNowPlaying()
         persistState()
     }
 
     func seek(to seconds: Double) {
+        seek(to: seconds, eventKind: .seek)
+    }
+
+    private func seek(to seconds: Double, eventKind: ListeningEventKind) {
         let duration = Double(max(currentTrack.durationSeconds, 0))
         let target = min(max(seconds, 0), duration)
+        let previous = elapsedSeconds
+        accountPlayback(to: previous)
+        emitListeningEvent(eventKind, from: previous, to: target)
         player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
         elapsedSeconds = target
+        lastObservedPosition = target
         updateNowPlaying()
     }
 
@@ -254,7 +285,7 @@ final class PlaybackCoordinator: ObservableObject {
     }
 
     func skip(by interval: Double) {
-        seek(to: elapsedSeconds + interval)
+        seek(to: elapsedSeconds + interval, eventKind: .seek)
     }
 
     func next() {
@@ -344,6 +375,7 @@ final class PlaybackCoordinator: ObservableObject {
     func clearPlaybackError() { playbackError = nil }
 
     private func clear() {
+        finishListeningSession(as: .stopped)
         player.replaceCurrentItem(with: nil)
         queue = []
         playbackHistory = []
@@ -357,6 +389,7 @@ final class PlaybackCoordinator: ObservableObject {
 
     private func selectTrack(at index: Int, autoplay: Bool, recordHistory: Bool = true) {
         guard queue.indices.contains(index) else { return }
+        finishListeningSession(as: .skip)
         if recordHistory, currentTrack != .empty, currentTrack.id != queue[index].id {
             playbackHistory.append(currentTrack)
         }
@@ -373,6 +406,7 @@ final class PlaybackCoordinator: ObservableObject {
             return
         }
 
+        startListeningSession()
         player.replaceCurrentItem(with: AVPlayerItem(url: url))
         if autoplay {
             resume()
@@ -385,7 +419,14 @@ final class PlaybackCoordinator: ObservableObject {
 
     private func advance(automatic: Bool) {
         guard let currentIndex, !queue.isEmpty else { return }
+        if automatic {
+            let completedPosition = Double(max(currentTrack.durationSeconds, 0))
+            accountPlayback(to: completedPosition)
+            elapsedSeconds = completedPosition
+        }
         if automatic, repeatMode == .one {
+            finishListeningSession(as: .completed)
+            startListeningSession()
             player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
                 guard finished else { return }
                 Task { @MainActor in
@@ -397,14 +438,76 @@ final class PlaybackCoordinator: ObservableObject {
         }
 
         let nextIndex = currentIndex + 1
+        if automatic { finishListeningSession(as: .completed) }
         if queue.indices.contains(nextIndex) {
             selectTrack(at: nextIndex, autoplay: true)
         } else if repeatMode == .all {
             selectTrack(at: 0, autoplay: true)
         } else {
-            pause()
-            seek(to: Double(currentTrack.durationSeconds))
+            pause(recording: automatic ? .completed : .paused)
+            seek(to: Double(currentTrack.durationSeconds), eventKind: .seek)
         }
+    }
+
+    private func startListeningSession() {
+        guard currentTrack != .empty, currentTrack.fileURL != nil else { return }
+        listeningSessionID = UUID()
+        listenedSeconds = 0
+        unflushedListenedSeconds = 0
+        lastObservedPosition = elapsedSeconds
+        qualifiedRecorded = false
+        emitListeningEvent(.started)
+    }
+
+    private func accountPlayback(to position: Double) {
+        guard listeningSessionID != nil, isPlaying else {
+            lastObservedPosition = position
+            return
+        }
+        let delta = position - lastObservedPosition
+        if delta >= 0, delta <= 2.0 {
+            listenedSeconds += delta
+            unflushedListenedSeconds += delta
+        }
+        lastObservedPosition = position
+
+        let duration = Double(max(currentTrack.durationSeconds, 1))
+        let threshold = max(1, min(30, duration * 0.5))
+        if !qualifiedRecorded, listenedSeconds >= threshold {
+            qualifiedRecorded = true
+            emitListeningEvent(.qualified)
+        }
+    }
+
+    private func emitListeningEvent(
+        _ kind: ListeningEventKind,
+        from: Double? = nil,
+        to: Double? = nil
+    ) {
+        guard let sessionID = listeningSessionID, currentTrack != .empty else { return }
+        let event = ListeningEventDraft(
+            sessionID: sessionID,
+            trackID: currentTrack.id,
+            kind: kind,
+            position: elapsedSeconds,
+            fromPosition: from,
+            toPosition: to,
+            listenedSeconds: unflushedListenedSeconds,
+            context: queueContext
+        )
+        unflushedListenedSeconds = 0
+        let repository = statisticsRepository
+        Task { try? await repository.record(event) }
+    }
+
+    private func finishListeningSession(as kind: ListeningEventKind) {
+        guard listeningSessionID != nil else { return }
+        accountPlayback(to: elapsedSeconds)
+        emitListeningEvent(kind)
+        listeningSessionID = nil
+        listenedSeconds = 0
+        unflushedListenedSeconds = 0
+        qualifiedRecorded = false
     }
 
     private func configureAudioSession() {
@@ -424,6 +527,7 @@ final class PlaybackCoordinator: ObservableObject {
             let seconds = time.seconds.isFinite ? time.seconds : 0
             Task { @MainActor in
                 guard let self else { return }
+                self.accountPlayback(to: max(seconds, 0))
                 self.elapsedSeconds = max(seconds, 0)
                 self.updateNowPlaying()
             }
@@ -446,7 +550,8 @@ final class PlaybackCoordinator: ObservableObject {
                 ?? String(localized: "player.playback_failed")
             Task { @MainActor in
                 self?.playbackError = message
-                self?.advance(automatic: true)
+                self?.finishListeningSession(as: .stopped)
+                self?.advance(automatic: false)
             }
         }
 
@@ -476,7 +581,7 @@ final class PlaybackCoordinator: ObservableObject {
         guard let type = AVAudioSession.InterruptionType(rawValue: typeRaw) else { return }
         if type == .began {
             shouldResumeAfterInterruption = isPlaying
-            pause()
+            pause(recording: .interruption)
         } else if shouldResumeAfterInterruption,
                   AVAudioSession.InterruptionOptions(rawValue: optionsRaw).contains(.shouldResume) {
             resume()
@@ -485,7 +590,7 @@ final class PlaybackCoordinator: ObservableObject {
 
     private func handleRouteChange(reasonRaw: UInt) {
         guard AVAudioSession.RouteChangeReason(rawValue: reasonRaw) == .oldDeviceUnavailable else { return }
-        pause()
+        pause(recording: .interruption)
     }
 
     private func configureRemoteCommands() {

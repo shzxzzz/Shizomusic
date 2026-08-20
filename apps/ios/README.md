@@ -21,7 +21,11 @@ those capabilities.
 It handles seeking, previous/next history, shuffle, repeat-one/all,
 background audio, interruptions, headphone removal and Control Center commands.
 
-Player backgrounds extract several colors from the current embedded artwork and blend them as animated radial gradients. Playlists and duplicate playlist items are persisted in SQLite; every item owns a stable UUID and a fractional rank, so local reordering does not rewrite the whole list during normal use.
+Player backgrounds extract several colors from the current embedded artwork and blend them as animated radial gradients. Playlists and their custom uploaded covers are persisted locally. A track can occur only once in a playlist; every item owns a stable UUID and a fractional rank, so local reordering does not rewrite the whole list during normal use.
+
+Listening sessions are recorded as local events for start, pause, seek, skip, interruption, qualified play and completion. The Statistics tab builds daily/monthly totals, history and top tracks, artists and releases from SQLite.
+
+The authorization flow accepts one-time invitations, stores refresh tokens in Keychain and supports device/user revocation. Selecting local-only mode keeps the complete media workflow available without a server or internet connection.
 
 The device regression checklist is in
 [`PHYSICAL_DEVICE_TEST_PLAN.md`](PHYSICAL_DEVICE_TEST_PLAN.md).
