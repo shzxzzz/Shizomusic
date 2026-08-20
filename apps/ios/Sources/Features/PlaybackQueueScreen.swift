@@ -22,7 +22,8 @@ struct PlaybackQueueScreen: View {
                             .foregroundStyle(.secondary)
                             .listRowBackground(Color.clear)
                     } else {
-                        ForEach(playback.upcomingTracks) { track in
+                        ForEach(playback.upcomingTracks.indices, id: \.self) { index in
+                            let track = playback.upcomingTracks[index]
                             QueueTrackRow(
                                 track: track,
                                 isCurrent: false,
@@ -36,7 +37,8 @@ struct PlaybackQueueScreen: View {
 
                 if !playback.playbackHistory.isEmpty {
                     Section("queue.history") {
-                        ForEach(playback.playbackHistory.reversed()) { track in
+                        ForEach(reversedHistory.indices, id: \.self) { index in
+                            let track = reversedHistory[index]
                             QueueTrackRow(track: track, isCurrent: false, onTap: { playback.play(track) })
                         }
                     }
@@ -63,6 +65,8 @@ struct PlaybackQueueScreen: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
     }
+
+    private var reversedHistory: [PlayableTrack] { Array(playback.playbackHistory.reversed()) }
 }
 
 private struct QueueTrackRow: View {

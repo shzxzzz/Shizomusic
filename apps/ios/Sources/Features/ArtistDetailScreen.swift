@@ -87,5 +87,5 @@ struct ArtistDetailBackground: View {
 
 #Preview("Local artist") {
     NavigationStack { ArtistDetailScreen(destination: .init(name: "Artist")) }
-        .environmentObject(PlaybackCoordinator()).environmentObject(LocalMediaLibrary())
+        .environmentObject(PlaybackCoordinator()).environmentObject(LocalMediaLibrary()).environmentObject(PlaylistStore())
 }

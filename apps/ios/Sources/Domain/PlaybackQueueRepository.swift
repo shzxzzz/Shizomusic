@@ -2,7 +2,7 @@ import Foundation
 import GRDB
 
 struct QueueSourceContext: Codable, Equatable, Sendable {
-    enum Kind: String, Codable, Sendable { case adHoc, offline, release, artist, search }
+    enum Kind: String, Codable, Sendable { case adHoc, offline, release, artist, search, playlist }
     let kind: Kind
     let id: String?
 
@@ -11,6 +11,7 @@ struct QueueSourceContext: Codable, Equatable, Sendable {
     static func release(_ id: String) -> Self { .init(kind: .release, id: id) }
     static func artist(_ id: String) -> Self { .init(kind: .artist, id: id) }
     static func search(_ query: String) -> Self { .init(kind: .search, id: query) }
+    static func playlist(_ id: UUID) -> Self { .init(kind: .playlist, id: id.uuidString) }
 }
 
 struct PersistedQueueItem: Identifiable, Sendable {

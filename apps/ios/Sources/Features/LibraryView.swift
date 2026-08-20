@@ -5,6 +5,7 @@ struct LibraryView: View {
     @State private var selectedTab: AppTab = .player
     @StateObject private var playback = PlaybackCoordinator()
     @StateObject private var localLibrary = LocalMediaLibrary()
+    @StateObject private var playlistStore = PlaylistStore()
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -44,12 +45,15 @@ struct LibraryView: View {
         .preferredColorScheme(.dark)
         .environmentObject(playback)
         .environmentObject(localLibrary)
+        .environmentObject(playlistStore)
         .task {
             await localLibrary.scan()
+            await playlistStore.load()
             playback.replaceLibrary(localLibrary.tracks)
         }
         .onChange(of: localLibrary.tracks) {
             playback.replaceLibrary(localLibrary.tracks)
+            Task { await playlistStore.load() }
         }
         .onChange(of: scenePhase) {
             guard scenePhase == .active else { return }
@@ -74,6 +78,9 @@ private struct PlayerNavigationRoot: View {
             PlayerScreen(onOpenLibrary: onOpenLibrary)
                 .navigationDestination(for: CollectionDetailDestination.self) { destination in
                     CollectionDetailScreen(destination: destination)
+                }
+                .navigationDestination(for: ArtistDetailDestination.self) { destination in
+                    ArtistDetailScreen(destination: destination)
                 }
         }
     }
@@ -399,6 +406,7 @@ private struct PlaybackErrorBanner: View {
 private struct PlayerBackground: View {
     let artworkName: String
     let artworkURL: URL?
+    @State private var palette = ArtworkPalette.fallback
 
     var body: some View {
         GeometryReader { geometry in
@@ -407,15 +415,30 @@ private struct PlayerBackground: View {
                     .scaledToFill()
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .scaleEffect(1.16)
-                    .blur(radius: 52)
+                    .blur(radius: 64)
+                    .opacity(0.34)
+                    .saturation(1.35)
                     .id(artworkURL?.absoluteString ?? artworkName)
                     .transition(.opacity)
 
-                Color(red: 0.34, green: 0.43, blue: 0.49)
-                    .opacity(0.58)
+                palette.base.color.opacity(0.82)
+
+                RadialGradient(
+                    colors: [palette.primary.color.opacity(0.74), .clear],
+                    center: .topLeading,
+                    startRadius: 10,
+                    endRadius: geometry.size.height * 0.78
+                )
+
+                RadialGradient(
+                    colors: [palette.secondary.color.opacity(0.60), .clear],
+                    center: .bottomTrailing,
+                    startRadius: 20,
+                    endRadius: geometry.size.height * 0.72
+                )
 
                 LinearGradient(
-                    colors: [.white.opacity(0.09), .clear, .black.opacity(0.16)],
+                    colors: [.white.opacity(0.10), .clear, .black.opacity(0.34)],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
@@ -424,6 +447,10 @@ private struct PlayerBackground: View {
             .clipped()
         }
         .ignoresSafeArea()
+        .task(id: artworkURL?.absoluteString ?? artworkName) {
+            let extracted = await ArtworkPaletteExtractor.palette(artworkURL: artworkURL, fallbackName: artworkName)
+            withAnimation(.easeInOut(duration: 0.55)) { palette = extracted }
+        }
     }
 }
 

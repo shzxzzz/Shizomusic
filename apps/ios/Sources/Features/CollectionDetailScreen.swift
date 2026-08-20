@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum CollectionDetailDestination: Hashable, Sendable {
-    case playlist(titleKey: String, metadataKey: String, artwork: CollectionHeroArtwork)
+    case playlist(id: UUID)
     case release(id: String, title: String, artist: String)
     case liked
     case offline
@@ -20,6 +20,7 @@ struct CollectionDetailScreen: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @EnvironmentObject private var playback: PlaybackCoordinator
     @EnvironmentObject private var localLibrary: LocalMediaLibrary
+    @EnvironmentObject private var playlistStore: PlaylistStore
 
     @State private var isEditing = false
     @State private var isCollectionLiked = false
@@ -27,11 +28,21 @@ struct CollectionDetailScreen: View {
     @State private var showsFileImporter = false
     @State private var showsMusicFolder = false
     @State private var pendingDeletion: CollectionTrackModel?
+    @State private var showsTrackPicker = false
+    @State private var showsRename = false
+    @State private var showsCoverPicker = false
+    @State private var showsDeletePlaylist = false
+    @State private var renameTitle = ""
 
     let destination: CollectionDetailDestination
 
     private var model: CollectionDetailModel {
-        CollectionDetailModel(destination: destination)
+        CollectionDetailModel(destination: destination, playlist: playlist)
+    }
+
+    private var playlist: Playlist? {
+        guard case let .playlist(id) = destination else { return nil }
+        return playlistStore.playlists.first { $0.id == id }
     }
 
     private var showsStickyHeader: Bool {
@@ -39,13 +50,21 @@ struct CollectionDetailScreen: View {
     }
 
     private var displayedTracks: [CollectionTrackModel] {
+        if let playlist {
+            return playlist.items.map {
+                CollectionTrackModel(playableTrack: $0.track, playlistItemID: $0.id)
+            }
+        }
+
         let tracks: [PlayableTrack]
         switch destination {
         case .offline:
             tracks = localLibrary.tracks
         case let .release(id, _, _):
             tracks = localLibrary.tracks.filter { $0.releaseID == id }
-        case .playlist, .liked:
+        case .playlist:
+            tracks = []
+        case .liked:
             tracks = []
         }
         return tracks.map(CollectionTrackModel.init(playableTrack:))
@@ -63,7 +82,10 @@ struct CollectionDetailScreen: View {
                     CollectionNavigationHeader(
                         model: model,
                         isEditing: $isEditing,
-                        onBack: { dismiss() }
+                        onBack: { dismiss() },
+                        onRename: { prepareRename() },
+                        onChangeCover: { showsCoverPicker = true },
+                        onDelete: { showsDeletePlaylist = true }
                     )
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
@@ -131,6 +153,34 @@ struct CollectionDetailScreen: View {
             }
             .ignoresSafeArea()
         }
+        .sheet(isPresented: $showsTrackPicker) {
+            if let playlist {
+                PlaylistTrackPicker(playlist: playlist, tracks: localLibrary.tracks)
+            }
+        }
+        .sheet(isPresented: $showsCoverPicker) {
+            if let playlist { PlaylistCoverPicker(playlist: playlist) }
+        }
+        .alert("collection.rename", isPresented: $showsRename) {
+            TextField("playlist_create.name_placeholder", text: $renameTitle)
+            Button("playlist_create.cancel", role: .cancel) {}
+            Button("collection.rename") {
+                guard let playlist else { return }
+                let title = renameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !title.isEmpty else { return }
+                Task { await playlistStore.rename(id: playlist.id, title: title) }
+            }
+        }
+        .confirmationDialog("collection.delete_playlist", isPresented: $showsDeletePlaylist) {
+            Button("collection.delete_playlist", role: .destructive) {
+                guard let playlist else { return }
+                Task {
+                    await playlistStore.delete(id: playlist.id)
+                    dismiss()
+                }
+            }
+            Button("playlist_create.cancel", role: .cancel) {}
+        }
         .confirmationDialog(
             "library.delete_file_title",
             isPresented: Binding(
@@ -158,6 +208,7 @@ struct CollectionDetailScreen: View {
                 metadataKey: model.metadataKey,
                 artwork: model.heroArtwork ?? .violet,
                 artworkURL: model.kind == .release ? displayedTracks.compactMap(\.artworkURL).first : nil,
+                playlistCoverStyle: playlist?.coverStyle,
                 compactArtwork: dynamicTypeSize.isAccessibilitySize
             )
         case .offline:
@@ -209,10 +260,19 @@ struct CollectionDetailScreen: View {
                 CollectionSecondaryActionButton(
                     titleKey: "collection.add_tracks",
                     systemImage: "plus",
-                    accessibilityKey: "collection.add_tracks"
+                    accessibilityKey: "collection.add_tracks",
+                    action: { showsTrackPicker = true }
                 )
 
-                CollectionOverflowMenu(kind: model.kind, isEditing: $isEditing) {
+                CollectionOverflowMenu(
+                    kind: model.kind,
+                    isEditing: $isEditing,
+                    onRename: {
+                        prepareRename()
+                    },
+                    onChangeCover: { showsCoverPicker = true },
+                    onDelete: { showsDeletePlaylist = true }
+                ) {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.86))
@@ -255,14 +315,17 @@ struct CollectionDetailScreen: View {
                     track: track,
                     kind: model.kind,
                     isEditing: isEditing,
-                    isCurrent: playback.currentTrack.id == track.id,
+                    isCurrent: playback.currentTrack.id == track.trackID,
                     onTap: {
                         playback.play(displayedTracks.map(\.playableTrack), startingAt: index, context: queueContext)
                     },
                     onRemove: {
-                        guard model.kind == .offline else { return }
-                        pendingDeletion = track
-                    }
+                        if let itemID = track.playlistItemID {
+                            Task { await playlistStore.remove(itemID: itemID) }
+                        } else if model.kind == .offline { pendingDeletion = track }
+                    },
+                    onMoveUp: { movePlaylistItem(track, offset: -1) },
+                    onMoveDown: { movePlaylistItem(track, offset: 1) }
                 )
 
                 if track.id != displayedTracks.last?.id {
@@ -290,8 +353,22 @@ struct CollectionDetailScreen: View {
         switch destination {
         case .offline: .offline
         case let .release(id, _, _): .release(id)
+        case let .playlist(id): .playlist(id)
         default: .adHoc
         }
+    }
+
+    private func movePlaylistItem(_ track: CollectionTrackModel, offset: Int) {
+        guard let playlist, let itemID = track.playlistItemID,
+              let index = playlist.items.firstIndex(where: { $0.id == itemID }) else { return }
+        let destination = min(max(index + offset, 0), playlist.items.count - 1)
+        guard destination != index else { return }
+        Task { await playlistStore.move(itemID: itemID, to: destination) }
+    }
+
+    private func prepareRename() {
+        renameTitle = playlist?.title ?? ""
+        showsRename = true
     }
 }
 
@@ -365,6 +442,9 @@ private struct CollectionNavigationHeader: View {
     let model: CollectionDetailModel
     @Binding var isEditing: Bool
     let onBack: () -> Void
+    let onRename: () -> Void
+    let onChangeCover: () -> Void
+    let onDelete: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -393,7 +473,13 @@ private struct CollectionNavigationHeader: View {
                 .foregroundStyle(.white)
                 .buttonStyle(.plain)
             } else if model.kind != .release {
-                CollectionOverflowMenu(kind: model.kind, isEditing: $isEditing) {
+                CollectionOverflowMenu(
+                    kind: model.kind,
+                    isEditing: $isEditing,
+                    onRename: onRename,
+                    onChangeCover: onChangeCover,
+                    onDelete: onDelete
+                ) {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 18, weight: .semibold))
                         .frame(width: 38, height: 38)
@@ -415,6 +501,7 @@ private struct PlaylistCollectionHero: View {
     let metadataKey: String
     let artwork: CollectionHeroArtwork
     let artworkURL: URL?
+    let playlistCoverStyle: PlaylistCoverStyle?
     let compactArtwork: Bool
 
     private var artworkSize: CGFloat {
@@ -426,6 +513,8 @@ private struct PlaylistCollectionHero: View {
             Group {
                 if let artworkURL {
                     TrackArtworkView(artworkURL: artworkURL, fallbackName: "MistyLake").scaledToFill()
+                } else if let playlistCoverStyle {
+                    LibraryArtwork(style: playlistCoverStyle)
                 } else {
                     CollectionHeroArtworkView(artwork: artwork)
                 }
@@ -657,6 +746,8 @@ private struct CollectionTrackRow: View {
     let isCurrent: Bool
     let onTap: () -> Void
     let onRemove: () -> Void
+    let onMoveUp: () -> Void
+    let onMoveDown: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -714,6 +805,16 @@ private struct CollectionTrackRow: View {
             .buttonStyle(.plain)
 
             if isEditing {
+                VStack(spacing: 2) {
+                    Button(action: onMoveUp) { Image(systemName: "chevron.up") }
+                        .accessibilityLabel(Text("playlist.move_up"))
+                    Button(action: onMoveDown) { Image(systemName: "chevron.down") }
+                        .accessibilityLabel(Text("playlist.move_down"))
+                }
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.white.opacity(0.62))
+                .buttonStyle(.plain)
+
                 Button(action: onRemove) {
                     Image(systemName: "minus.circle.fill")
                         .font(.system(size: 20))
@@ -722,12 +823,22 @@ private struct CollectionTrackRow: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("collection.remove_track"))
             } else {
-                TrackOverflowMenu(track: track, kind: kind, onRemove: onRemove)
+                TrackActionsMenu(
+                    track: track.playableTrack,
+                    removeTitle: removeTitle,
+                    onRemove: onRemove
+                )
             }
         }
         .frame(minHeight: 64)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: "\(track.title), \(track.artist), \(track.durationText)"))
+    }
+
+    private var removeTitle: String? {
+        switch kind {
+        case .offline: "collection.remove_local_copy"
+        case .playlist: "collection.remove_from_playlist"
+        case .release, .liked: nil
+        }
     }
 }
 
@@ -769,52 +880,12 @@ private struct CollectionTrackArtworkView: View {
     }
 }
 
-private struct TrackOverflowMenu: View {
-    @EnvironmentObject private var playback: PlaybackCoordinator
-
-    let track: CollectionTrackModel
-    let kind: CollectionDetailKind
-    let onRemove: () -> Void
-
-    var body: some View {
-        Menu {
-            Button("collection.play_next") { playback.playNext(track.playableTrack) }
-            Button("collection.add_to_queue") { playback.addToQueue(track.playableTrack) }
-            Button("collection.add_to_playlist", action: {})
-
-            if kind != .offline {
-                Button("collection.download", action: {})
-            }
-
-            Divider()
-            Button("collection.go_to_artist", action: {})
-            Button("collection.go_to_release", action: {})
-            if kind != .release {
-                Divider()
-                Button(
-                    LocalizedStringKey(
-                        kind == .offline
-                            ? "collection.remove_local_copy"
-                            : "collection.remove_from_playlist"
-                    ),
-                    role: .destructive,
-                    action: onRemove
-                )
-            }
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.56))
-                .frame(width: 32, height: 44)
-        }
-        .accessibilityLabel(Text("collection.more_actions"))
-        .accessibilityValue(Text(verbatim: track.title))
-    }
-}
-
 private struct CollectionOverflowMenu<Label: View>: View {
     let kind: CollectionDetailKind
     @Binding var isEditing: Bool
+    var onRename: () -> Void = {}
+    var onChangeCover: () -> Void = {}
+    var onDelete: () -> Void = {}
     @ViewBuilder let label: () -> Label
 
     var body: some View {
@@ -826,9 +897,9 @@ private struct CollectionOverflowMenu<Label: View>: View {
                 Button("collection.clear", role: .destructive, action: {})
             case .playlist:
                 Button("collection.edit") { isEditing = true }
-                Button("collection.change_cover", action: {})
-                Button("collection.rename", action: {})
-                Button("collection.delete_playlist", role: .destructive, action: {})
+                Button("collection.change_cover", action: onChangeCover)
+                Button("collection.rename", action: onRename)
+                Button("collection.delete_playlist", role: .destructive, action: onDelete)
             case .liked:
                 Button("collection.sort", action: {})
             case .release:
@@ -989,13 +1060,13 @@ private struct CollectionDetailModel: Sendable {
     let metadataKey: String
     let heroArtwork: CollectionHeroArtwork?
 
-    init(destination: CollectionDetailDestination) {
+    init(destination: CollectionDetailDestination, playlist: Playlist?) {
         switch destination {
-        case let .playlist(titleKey, metadataKey, artwork):
+        case .playlist:
             self.kind = .playlist
-            self.titleKey = titleKey
-            self.metadataKey = metadataKey
-            self.heroArtwork = artwork
+            self.titleKey = playlist?.title ?? String(localized: "library.playlists")
+            self.metadataKey = "\(playlist?.items.count ?? 0) \(String(localized: "collection.tracks_unit"))"
+            self.heroArtwork = playlist?.coverStyle.detailArtwork ?? .violet
         case let .release(_, title, artist):
             self.kind = .release
             self.titleKey = title
@@ -1032,6 +1103,8 @@ private struct CollectionDetailModel: Sendable {
 
 private struct CollectionTrackModel: Identifiable, Sendable {
     let id: String
+    let trackID: String
+    let playlistItemID: UUID?
     let title: String
     let artist: String
     let artistNames: [String]
@@ -1045,6 +1118,8 @@ private struct CollectionTrackModel: Identifiable, Sendable {
 
     init(
         id: String,
+        trackID: String? = nil,
+        playlistItemID: UUID? = nil,
         title: String,
         artist: String,
         artistNames: [String]? = nil,
@@ -1057,6 +1132,8 @@ private struct CollectionTrackModel: Identifiable, Sendable {
         fileURL: URL? = nil
     ) {
         self.id = id
+        self.trackID = trackID ?? id
+        self.playlistItemID = playlistItemID
         self.title = title
         self.artist = artist
         self.artistNames = artistNames ?? [artist]
@@ -1069,8 +1146,10 @@ private struct CollectionTrackModel: Identifiable, Sendable {
         self.fileURL = fileURL
     }
 
-    init(playableTrack: PlayableTrack) {
-        id = playableTrack.id
+    init(playableTrack: PlayableTrack, playlistItemID: UUID? = nil) {
+        id = playlistItemID?.uuidString ?? playableTrack.id
+        trackID = playableTrack.id
+        self.playlistItemID = playlistItemID
         title = playableTrack.title
         artist = playableTrack.artist
         artistNames = playableTrack.artistNames
@@ -1085,7 +1164,7 @@ private struct CollectionTrackModel: Identifiable, Sendable {
 
     var playableTrack: PlayableTrack {
         PlayableTrack(
-            id: id,
+            id: trackID,
             title: title,
             artist: artist,
             artistNames: artistNames,
@@ -1148,16 +1227,11 @@ private extension CollectionHeroArtwork {
 
 #Preview("Playlist detail") {
     NavigationStack {
-        CollectionDetailScreen(
-            destination: .playlist(
-                titleKey: "library.playlist_night",
-                metadataKey: "collection.night_metadata",
-                artwork: .violet
-            )
-        )
+        CollectionDetailScreen(destination: .playlist(id: UUID()))
     }
     .environmentObject(PlaybackCoordinator())
     .environmentObject(LocalMediaLibrary())
+    .environmentObject(PlaylistStore())
 }
 
 #Preview("Offline detail") {
@@ -1166,4 +1240,5 @@ private extension CollectionHeroArtwork {
     }
     .environmentObject(PlaybackCoordinator())
     .environmentObject(LocalMediaLibrary())
+    .environmentObject(PlaylistStore())
 }

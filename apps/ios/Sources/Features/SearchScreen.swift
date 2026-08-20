@@ -16,6 +16,7 @@ enum SearchCategory: String, CaseIterable, Hashable, Sendable {
 struct SearchScreen: View {
     @EnvironmentObject private var playback: PlaybackCoordinator
     @EnvironmentObject private var localLibrary: LocalMediaLibrary
+    @EnvironmentObject private var playlistStore: PlaylistStore
     @State private var query = ""
     @State private var category: SearchCategory = .all
 
@@ -29,7 +30,10 @@ struct SearchScreen: View {
             query.isEmpty || matchedIDs.contains($0.id) || $0.title.localizedCaseInsensitiveContains(query) || $0.artist.localizedCaseInsensitiveContains(query)
         }
     }
-    private var hasResults: Bool { !tracks.isEmpty || !artists.isEmpty || !releases.isEmpty }
+    private var playlists: [Playlist] {
+        playlistStore.playlists.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) }
+    }
+    private var hasResults: Bool { !tracks.isEmpty || !artists.isEmpty || !releases.isEmpty || !playlists.isEmpty }
 
     var body: some View {
         NavigationStack {
@@ -45,7 +49,7 @@ struct SearchScreen: View {
                                 .frame(maxWidth: .infinity).padding(.vertical, 50)
                         } else if let error = localLibrary.errorMessage {
                             CatalogErrorState(message: error)
-                        } else if localLibrary.tracks.isEmpty {
+                        } else if localLibrary.tracks.isEmpty && playlistStore.playlists.isEmpty {
                             CatalogEmptyState(title: "search.local_empty_title", detail: "search.local_empty_detail", icon: "music.note.house")
                         } else if !hasResults {
                             CatalogEmptyState(title: "search.nothing_found", detail: "search.try_another_query", icon: "magnifyingglass")
@@ -68,11 +72,14 @@ struct SearchScreen: View {
             SearchArtistResults(artists: Array(artists.prefix(3)))
             SearchTrackResults(tracks: Array(tracks.prefix(8)), onPlay: play)
             SearchReleaseResults(releases: Array(releases.prefix(6)))
+            PlaylistResultsList(playlists: Array(playlists.prefix(4)))
         case .tracks: SearchTrackResults(tracks: tracks, onPlay: play)
         case .artists: SearchArtistResults(artists: artists)
         case .releases: SearchReleaseResults(releases: releases)
         case .playlists:
-            CatalogEmptyState(title: "search.playlists_empty_title", detail: "search.playlists_empty_detail", icon: "music.note.list")
+            if playlists.isEmpty {
+                CatalogEmptyState(title: "search.playlists_empty_title", detail: "search.playlists_empty_detail", icon: "music.note.list")
+            } else { PlaylistResultsList(playlists: playlists) }
         }
     }
 
@@ -103,5 +110,5 @@ private struct SearchBackground: View {
 }
 
 #Preview("Local search") {
-    SearchScreen().environmentObject(PlaybackCoordinator()).environmentObject(LocalMediaLibrary())
+    SearchScreen().environmentObject(PlaybackCoordinator()).environmentObject(LocalMediaLibrary()).environmentObject(PlaylistStore())
 }

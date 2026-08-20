@@ -21,5 +21,7 @@ those capabilities.
 It handles seeking, previous/next history, shuffle, repeat-one/all,
 background audio, interruptions, headphone removal and Control Center commands.
 
+Player backgrounds extract several colors from the current embedded artwork and blend them as animated radial gradients. Playlists and duplicate playlist items are persisted in SQLite; every item owns a stable UUID and a fractional rank, so local reordering does not rewrite the whole list during normal use.
+
 The device regression checklist is in
 [`PHYSICAL_DEVICE_TEST_PLAN.md`](PHYSICAL_DEVICE_TEST_PLAN.md).

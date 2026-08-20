@@ -16,6 +16,7 @@ struct LibrarySectionListScreen: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var localLibrary: LocalMediaLibrary
     @EnvironmentObject private var playback: PlaybackCoordinator
+    @EnvironmentObject private var playlistStore: PlaylistStore
     let destination: LibrarySectionDestination
 
     var body: some View {
@@ -53,7 +54,13 @@ struct LibrarySectionListScreen: View {
                     }
                 }
             case .playlists:
-                CatalogEmptyState(title: "library.playlists_empty_title", detail: "library.playlists_empty_detail", icon: "music.note.list")
+                if playlistStore.isLoading {
+                    ProgressView("library.loading").frame(maxWidth: .infinity).padding(.vertical, 50)
+                } else if let error = playlistStore.errorMessage {
+                    ContentUnavailableView("library.error_title", systemImage: "exclamationmark.triangle", description: Text(verbatim: error))
+                } else if playlistStore.playlists.isEmpty {
+                    CatalogEmptyState(title: "library.playlists_empty_title", detail: "library.playlists_empty_detail", icon: "music.note.list")
+                } else { PlaylistResultsList(playlists: playlistStore.playlists) }
             case .releases:
                 if localLibrary.releases.isEmpty {
                     CatalogEmptyState(title: "library.releases_empty_title", detail: "library.catalog_empty_detail", icon: "square.stack")

@@ -3,7 +3,7 @@ import SwiftUI
 
 struct MusicLibraryView: View {
     @EnvironmentObject private var localLibrary: LocalMediaLibrary
-    @State private var playlists: [LibraryPlaylist] = []
+    @EnvironmentObject private var playlistStore: PlaylistStore
     @State private var showsCreatePlaylist = false
 
     private var releases: [LocalRelease] { localLibrary.releases }
@@ -23,6 +23,10 @@ struct MusicLibraryView: View {
                         if localLibrary.isLoading {
                             ProgressView("library.loading").frame(maxWidth: .infinity).padding(.vertical, 24)
                         } else if let error = localLibrary.errorMessage {
+                            ContentUnavailableView("library.error_title", systemImage: "exclamationmark.triangle", description: Text(verbatim: error))
+                                .frame(maxWidth: .infinity).padding(.vertical, 24)
+                        }
+                        if let error = playlistStore.errorMessage {
                             ContentUnavailableView("library.error_title", systemImage: "exclamationmark.triangle", description: Text(verbatim: error))
                                 .frame(maxWidth: .infinity).padding(.vertical, 24)
                         }
@@ -56,17 +60,7 @@ struct MusicLibraryView: View {
         }
         .sheet(isPresented: $showsCreatePlaylist) {
             CreatePlaylistSheet { title, artworkStyle in
-                playlists.insert(
-                    LibraryPlaylist(
-                        id: UUID().uuidString,
-                        titleKey: title,
-                        detailKey: "library.playlist_empty_detail",
-                        collectionMetadataKey: "collection.empty_metadata",
-                        detailArtwork: artworkStyle.detailArtwork,
-                        artworkStyle: artworkStyle
-                    ),
-                    at: 0
-                )
+                Task { await playlistStore.create(title: title, coverStyle: artworkStyle) }
             }
             .presentationDetents([.medium])
             .presentationDragIndicator(.visible)
@@ -142,8 +136,8 @@ struct MusicLibraryView: View {
                 columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3),
                 spacing: 10
             ) {
-                ForEach(playlists) { playlist in
-                    NavigationLink(value: playlist.detailDestination) {
+                ForEach(playlistStore.playlists) { playlist in
+                    NavigationLink(value: CollectionDetailDestination.playlist(id: playlist.id)) {
                         PlaylistTile(playlist: playlist)
                     }
                     .buttonStyle(.plain)
@@ -290,11 +284,11 @@ private struct SectionHeader: View {
 }
 
 private struct PlaylistTile: View {
-    let playlist: LibraryPlaylist
+    let playlist: Playlist
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            LibraryArtwork(style: playlist.artworkStyle)
+            LibraryArtwork(style: playlist.coverStyle)
                 .aspectRatio(1, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(alignment: .bottomLeading) {
@@ -307,11 +301,11 @@ private struct PlaylistTile: View {
                 }
                 .overlay(alignment: .bottomLeading) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(LocalizedStringKey(playlist.titleKey))
+                        Text(verbatim: playlist.title)
                             .font(.system(size: 12, weight: .semibold, design: .rounded))
                             .lineLimit(1)
 
-                        Text(LocalizedStringKey(playlist.detailKey))
+                        Text("\(playlist.items.count) \(String(localized: "collection.tracks_unit"))")
                             .font(.system(size: 10, weight: .medium, design: .rounded))
                             .foregroundStyle(.white.opacity(0.68))
                     }
@@ -388,7 +382,7 @@ private struct TopArtistRow: View {
 }
 
 private struct ArtistAvatar: View {
-    let style: LibraryArtworkStyle
+    let style: PlaylistCoverStyle
 
     var body: some View {
         LibraryArtwork(style: style)
@@ -400,8 +394,8 @@ private struct ArtistAvatar: View {
     }
 }
 
-private struct LibraryArtwork: View {
-    let style: LibraryArtworkStyle
+struct LibraryArtwork: View {
+    let style: PlaylistCoverStyle
 
     var body: some View {
         ZStack {
@@ -453,14 +447,7 @@ private struct LibraryArtwork: View {
     }
 }
 
-private enum LibraryArtworkStyle: String, Hashable, Sendable {
-    case mistyLake
-    case auroraShore
-    case violet
-    case sunset
-    case midnight
-    case silver
-
+extension PlaylistCoverStyle {
     var symbol: String {
         switch self {
         case .mistyLake: "moon.stars.fill"
@@ -482,33 +469,15 @@ private enum LibraryArtworkStyle: String, Hashable, Sendable {
     }
 }
 
-private struct LibraryPlaylist: Identifiable, Sendable {
-    let id: String
-    let titleKey: String
-    let detailKey: String
-    let collectionMetadataKey: String
-    let detailArtwork: CollectionHeroArtwork
-    let artworkStyle: LibraryArtworkStyle
-
-    var detailDestination: CollectionDetailDestination {
-        .playlist(
-            titleKey: titleKey,
-            metadataKey: collectionMetadataKey,
-            artwork: detailArtwork
-        )
-    }
-
-}
-
 private struct CreatePlaylistSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var title = ""
-    @State private var selectedArtwork: LibraryArtworkStyle = .violet
+    @State private var selectedArtwork: PlaylistCoverStyle = .violet
 
-    let onCreate: (String, LibraryArtworkStyle) -> Void
+    let onCreate: (String, PlaylistCoverStyle) -> Void
 
-    private let artworkOptions: [LibraryArtworkStyle] = [
+    private let artworkOptions: [PlaylistCoverStyle] = [
         .violet,
         .mistyLake,
         .sunset,

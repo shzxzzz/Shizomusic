@@ -261,7 +261,7 @@ final class GRDBTrackRepository: TrackRepository, @unchecked Sendable {
         )
     }
 
-    private static func fetchPlayableTracks(
+    static func fetchPlayableTracks(
         db: Database,
         matchingTrackIDs: [String]?,
         sort: LibraryTrackSort,

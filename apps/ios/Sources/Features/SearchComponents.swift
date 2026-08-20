@@ -40,18 +40,21 @@ struct SearchTrackResults: View {
             VStack(alignment: .leading, spacing: 6) {
                 SearchSectionTitle("search.tracks")
                 ForEach(tracks) { track in
-                    Button { onPlay(track) } label: {
-                        HStack(spacing: 12) {
-                            TrackArtworkView(artworkURL: track.artworkURL, fallbackName: track.artworkName)
-                                .scaledToFill().frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 9))
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(verbatim: track.title).font(.subheadline.weight(.semibold)).lineLimit(1)
-                                Text(verbatim: track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                            }
-                            Spacer()
-                            Text(verbatim: TimeInterval(track.durationSeconds).trackDurationText).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                        }.contentShape(Rectangle())
-                    }.buttonStyle(.plain)
+                    HStack(spacing: 4) {
+                        Button { onPlay(track) } label: {
+                            HStack(spacing: 12) {
+                                TrackArtworkView(artworkURL: track.artworkURL, fallbackName: track.artworkName)
+                                    .scaledToFill().frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 9))
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(verbatim: track.title).font(.subheadline.weight(.semibold)).lineLimit(1)
+                                    Text(verbatim: track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                                Spacer()
+                                Text(verbatim: TimeInterval(track.durationSeconds).trackDurationText).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                            }.contentShape(Rectangle())
+                        }.buttonStyle(.plain)
+                        TrackActionsMenu(track: track)
+                    }
                 }
             }
         }

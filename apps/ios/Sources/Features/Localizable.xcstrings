@@ -267,7 +267,9 @@
     "library.filter_available" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Available locally" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Доступные локально" } } } },
     "library.filter_missing" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Missing files" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Отсутствующие файлы" } } } },
     "library.delete_file_title" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete local file?" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Удалить локальный файл?" } } } },
-    "library.delete_file_confirm" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete file" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Удалить файл" } } } }
+    "library.delete_file_confirm" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete file" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Удалить файл" } } } },
+    "playlist.move_up" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Move up" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Переместить выше" } } } },
+    "playlist.move_down" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Move down" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Переместить ниже" } } } }
   },
   "version" : "1.0"
 }

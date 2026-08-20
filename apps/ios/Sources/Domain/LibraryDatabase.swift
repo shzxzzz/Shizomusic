@@ -142,6 +142,26 @@ final class LibraryDatabase: @unchecked Sendable {
                 CREATE INDEX queueItem_status ON queueItem(status);
                 """)
         }
+        migrator.registerMigration("v2.playlists") { db in
+            try db.execute(sql: """
+                CREATE TABLE playlist (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    title TEXT NOT NULL,
+                    coverStyle TEXT NOT NULL,
+                    createdAt DATETIME NOT NULL,
+                    updatedAt DATETIME NOT NULL
+                );
+                CREATE TABLE playlistItem (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    playlistID TEXT NOT NULL REFERENCES playlist(id) ON DELETE CASCADE,
+                    trackID TEXT NOT NULL REFERENCES track(id),
+                    rank DOUBLE NOT NULL,
+                    createdAt DATETIME NOT NULL
+                );
+                CREATE INDEX playlistItem_playlist_rank ON playlistItem(playlistID, rank);
+                CREATE INDEX playlistItem_trackID ON playlistItem(trackID);
+                """)
+        }
         return migrator
     }
 }
