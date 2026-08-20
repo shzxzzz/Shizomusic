@@ -1,6 +1,6 @@
 # iOS client
 
-Generate `ShizoMusic.xcodeproj` from `project.yml` through XcodeGen on macOS, then add GRDB 7.x through Swift Package Manager.
+Generate `ShizoMusic.xcodeproj` from `project.yml` through XcodeGen on macOS. GRDB 7.8.0 is pinned and linked by the project specification.
 
 Initial logical boundaries are App, Domain, Database, Networking, Sync, Playback, MediaLibrary, Features and DesignSystem. Do not couple SwiftUI views to GRDB or URLSession.
 
@@ -17,8 +17,8 @@ The generated `Sources/App/Info.plist` contains the required `audio` background
 mode and Files sharing keys; opening an older generated `.xcodeproj` won’t pick up
 those capabilities.
 
-`PlaybackCoordinator` is the single owner of `AVPlayer`, the persisted queue and
-playback state. It handles seeking, previous/next history, shuffle, repeat-one/all,
+`PlaybackCoordinator` is the single owner of `AVPlayer`; its queue, history and source context are persisted in SQLite through GRDB. The domain media library stores logical tracks separately from physical `TrackSource` files, so moved or rediscovered files retain their track identity.
+It handles seeking, previous/next history, shuffle, repeat-one/all,
 background audio, interruptions, headphone removal and Control Center commands.
 
 The device regression checklist is in

@@ -24,7 +24,10 @@ struct SearchScreen: View {
         localLibrary.artists.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.tracks.contains(where: matches) }
     }
     private var releases: [LocalRelease] {
-        localLibrary.releases.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.artist.localizedCaseInsensitiveContains(query) }
+        let matchedIDs = Set(tracks.compactMap(\.releaseID))
+        return localLibrary.releases.filter {
+            query.isEmpty || matchedIDs.contains($0.id) || $0.title.localizedCaseInsensitiveContains(query) || $0.artist.localizedCaseInsensitiveContains(query)
+        }
     }
     private var hasResults: Bool { !tracks.isEmpty || !artists.isEmpty || !releases.isEmpty }
 
@@ -37,7 +40,12 @@ struct SearchScreen: View {
                         Text("search.title").font(.largeTitle.bold())
                         SearchField(query: $query)
                         SearchCategoryBar(selection: $category)
-                        if localLibrary.tracks.isEmpty {
+                        if localLibrary.isLoading {
+                            ProgressView("library.loading")
+                                .frame(maxWidth: .infinity).padding(.vertical, 50)
+                        } else if let error = localLibrary.errorMessage {
+                            CatalogErrorState(message: error)
+                        } else if localLibrary.tracks.isEmpty {
                             CatalogEmptyState(title: "search.local_empty_title", detail: "search.local_empty_detail", icon: "music.note.house")
                         } else if !hasResults {
                             CatalogEmptyState(title: "search.nothing_found", detail: "search.try_another_query", icon: "magnifyingglass")
@@ -51,6 +59,7 @@ struct SearchScreen: View {
             .toolbar(.hidden, for: .navigationBar)
         }
         .preferredColorScheme(.dark)
+        .task(id: query) { await localLibrary.search(query: query) }
     }
 
     @ViewBuilder private var results: some View {
@@ -72,7 +81,15 @@ struct SearchScreen: View {
     }
 
     private func play(_ track: PlayableTrack) {
-        playback.play(tracks, startingAt: tracks.firstIndex(of: track) ?? 0)
+        playback.play(tracks, startingAt: tracks.firstIndex(of: track) ?? 0, context: .search(query))
+    }
+}
+
+private struct CatalogErrorState: View {
+    let message: String
+    var body: some View {
+        ContentUnavailableView("library.error_title", systemImage: "exclamationmark.triangle", description: Text(verbatim: message))
+            .frame(maxWidth: .infinity).padding(.vertical, 50)
     }
 }
 

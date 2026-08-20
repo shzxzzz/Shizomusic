@@ -216,8 +216,10 @@ private struct PlayerScreen: View {
     }
 
     private var currentPlaylistDestination: CollectionDetailDestination {
-        if let album = playback.currentTrack.albumTitle, !album.isEmpty {
-            return .release(title: album, metadataKey: playback.currentTrack.artist, artwork: currentPlaylistArtwork)
+        if let id = playback.currentTrack.releaseID,
+           let album = playback.currentTrack.albumTitle,
+           !album.isEmpty {
+            return .release(id: id, title: album, artist: playback.currentTrack.albumArtist ?? playback.currentTrack.artist)
         }
         return .offline
     }

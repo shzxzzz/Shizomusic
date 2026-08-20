@@ -5,6 +5,10 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+packages:
+  GRDB:
+    url: https://github.com/groue/GRDB.swift.git
+    exactVersion: 7.8.0
 targets:
   ShizoMusic:
     type: application
@@ -25,6 +29,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.shizomusic.app
+    dependencies:
+      - package: GRDB
     scheme:
       testTargets: [ShizoMusicTests]
   ShizoMusicTests:

@@ -20,6 +20,12 @@ struct MusicLibraryView: View {
                         if let progress = localLibrary.progress {
                             MediaLibraryProgressView(progress: progress)
                         }
+                        if localLibrary.isLoading {
+                            ProgressView("library.loading").frame(maxWidth: .infinity).padding(.vertical, 24)
+                        } else if let error = localLibrary.errorMessage {
+                            ContentUnavailableView("library.error_title", systemImage: "exclamationmark.triangle", description: Text(verbatim: error))
+                                .frame(maxWidth: .infinity).padding(.vertical, 24)
+                        }
                         quickAccess
                         playlistsSection
                         releasesSection
@@ -83,7 +89,7 @@ struct MusicLibraryView: View {
     }
 
     private var quickAccess: some View {
-        HStack(spacing: 10) {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
             NavigationLink(value: CollectionDetailDestination.liked) {
                 QuickAccessCard(
                     icon: "heart.fill",
@@ -101,6 +107,17 @@ struct MusicLibraryView: View {
                     titleKey: "library.offline",
                     detailKey: "library.offline_detail",
                     detailText: offlineMetadata
+                )
+            }
+            .buttonStyle(.plain)
+
+            NavigationLink(value: LibrarySectionDestination.tracks) {
+                QuickAccessCard(
+                    icon: "music.note",
+                    iconColor: .cyan,
+                    titleKey: "library.all_tracks",
+                    detailKey: "library.all_tracks_detail",
+                    detailText: "\(localLibrary.tracks.count)"
                 )
             }
             .buttonStyle(.plain)
@@ -144,7 +161,7 @@ struct MusicLibraryView: View {
                 spacing: 10
             ) {
                 ForEach(releases) { release in
-                    NavigationLink(value: CollectionDetailDestination.release(title: release.title, metadataKey: release.artist, artwork: .mistyLake)) {
+                    NavigationLink(value: CollectionDetailDestination.release(id: release.id, title: release.title, artist: release.artist)) {
                         ReleaseTile(release: release)
                     }
                     .buttonStyle(.plain)

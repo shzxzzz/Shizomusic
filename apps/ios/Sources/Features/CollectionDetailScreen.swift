@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 
 enum CollectionDetailDestination: Hashable, Sendable {
     case playlist(titleKey: String, metadataKey: String, artwork: CollectionHeroArtwork)
-    case release(title: String, metadataKey: String, artwork: CollectionHeroArtwork)
+    case release(id: String, title: String, artist: String)
     case liked
     case offline
 }
@@ -26,6 +26,7 @@ struct CollectionDetailScreen: View {
     @State private var heroBottom: CGFloat = 1_000
     @State private var showsFileImporter = false
     @State private var showsMusicFolder = false
+    @State private var pendingDeletion: CollectionTrackModel?
 
     let destination: CollectionDetailDestination
 
@@ -42,8 +43,8 @@ struct CollectionDetailScreen: View {
         switch destination {
         case .offline:
             tracks = localLibrary.tracks
-        case let .release(title, metadataKey, _):
-            tracks = localLibrary.tracks.filter { $0.albumTitle == title && $0.artist == metadataKey }
+        case let .release(id, _, _):
+            tracks = localLibrary.tracks.filter { $0.releaseID == id }
         case .playlist, .liked:
             tracks = []
         }
@@ -130,6 +131,22 @@ struct CollectionDetailScreen: View {
             }
             .ignoresSafeArea()
         }
+        .confirmationDialog(
+            "library.delete_file_title",
+            isPresented: Binding(
+                get: { pendingDeletion != nil },
+                set: { if !$0 { pendingDeletion = nil } }
+            ),
+            presenting: pendingDeletion
+        ) { track in
+            Button("library.delete_file_confirm", role: .destructive) {
+                Task { await localLibrary.removeTrack(track.playableTrack) }
+                pendingDeletion = nil
+            }
+            Button("friend_profile.cancel", role: .cancel) { pendingDeletion = nil }
+        } message: { track in
+            Text("\(track.title) — \(track.artist)")
+        }
     }
 
     @ViewBuilder
@@ -140,6 +157,7 @@ struct CollectionDetailScreen: View {
                 titleKey: model.titleKey,
                 metadataKey: model.metadataKey,
                 artwork: model.heroArtwork ?? .violet,
+                artworkURL: model.kind == .release ? displayedTracks.compactMap(\.artworkURL).first : nil,
                 compactArtwork: dynamicTypeSize.isAccessibilitySize
             )
         case .offline:
@@ -220,7 +238,13 @@ struct CollectionDetailScreen: View {
                 Spacer()
 
                 if model.kind == .offline {
-                    OfflineSortMenu()
+                    OfflineSortMenu(
+                        selectedSort: localLibrary.sort,
+                        selectedFilter: localLibrary.availabilityFilter,
+                        onChange: { sort, filter in
+                            Task { await localLibrary.apply(sort: sort, filter: filter) }
+                        }
+                    )
                 }
             }
             .foregroundStyle(.white)
@@ -233,11 +257,11 @@ struct CollectionDetailScreen: View {
                     isEditing: isEditing,
                     isCurrent: playback.currentTrack.id == track.id,
                     onTap: {
-                        playback.play(displayedTracks.map(\.playableTrack), startingAt: index)
+                        playback.play(displayedTracks.map(\.playableTrack), startingAt: index, context: queueContext)
                     },
                     onRemove: {
                         guard model.kind == .offline else { return }
-                        Task { await localLibrary.removeTrack(track.playableTrack) }
+                        pendingDeletion = track
                     }
                 )
 
@@ -259,7 +283,15 @@ struct CollectionDetailScreen: View {
     private func playCollection() {
         let tracks = displayedTracks.map(\.playableTrack)
         guard !tracks.isEmpty else { return }
-        playback.play(tracks)
+        playback.play(tracks, context: queueContext)
+    }
+
+    private var queueContext: QueueSourceContext {
+        switch destination {
+        case .offline: .offline
+        case let .release(id, _, _): .release(id)
+        default: .adHoc
+        }
     }
 }
 
@@ -382,6 +414,7 @@ private struct PlaylistCollectionHero: View {
     let titleKey: String
     let metadataKey: String
     let artwork: CollectionHeroArtwork
+    let artworkURL: URL?
     let compactArtwork: Bool
 
     private var artworkSize: CGFloat {
@@ -390,7 +423,13 @@ private struct PlaylistCollectionHero: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            CollectionHeroArtworkView(artwork: artwork)
+            Group {
+                if let artworkURL {
+                    TrackArtworkView(artworkURL: artworkURL, fallbackName: "MistyLake").scaledToFill()
+                } else {
+                    CollectionHeroArtworkView(artwork: artwork)
+                }
+            }
                 .frame(width: artworkSize, height: artworkSize)
                 .clipShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
                 .overlay {
@@ -683,7 +722,7 @@ private struct CollectionTrackRow: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("collection.remove_track"))
             } else {
-                TrackOverflowMenu(track: track, kind: kind)
+                TrackOverflowMenu(track: track, kind: kind, onRemove: onRemove)
             }
         }
         .frame(minHeight: 64)
@@ -732,10 +771,10 @@ private struct CollectionTrackArtworkView: View {
 
 private struct TrackOverflowMenu: View {
     @EnvironmentObject private var playback: PlaybackCoordinator
-    @EnvironmentObject private var localLibrary: LocalMediaLibrary
 
     let track: CollectionTrackModel
     let kind: CollectionDetailKind
+    let onRemove: () -> Void
 
     var body: some View {
         Menu {
@@ -759,10 +798,7 @@ private struct TrackOverflowMenu: View {
                             : "collection.remove_from_playlist"
                     ),
                     role: .destructive,
-                    action: {
-                        guard kind == .offline else { return }
-                        Task { await localLibrary.removeTrack(track.playableTrack) }
-                    }
+                    action: onRemove
                 )
             }
         } label: {
@@ -805,13 +841,28 @@ private struct CollectionOverflowMenu<Label: View>: View {
 }
 
 private struct OfflineSortMenu: View {
+    let selectedSort: LibraryTrackSort
+    let selectedFilter: LibraryAvailabilityFilter
+    let onChange: (LibraryTrackSort, LibraryAvailabilityFilter) -> Void
+
     var body: some View {
         Menu {
-            Button("collection.sort_recent", action: {})
-            Button("collection.sort_title", action: {})
-            Button("collection.sort_artist", action: {})
-            Button("collection.sort_size", action: {})
-            Button("collection.sort_duration", action: {})
+            Section("library.sort") {
+                ForEach(LibraryTrackSort.allCases, id: \.self) { sort in
+                    Button { onChange(sort, selectedFilter) } label: {
+                        if sort == selectedSort { Label(LocalizedStringKey(sort.localizationKey), systemImage: "checkmark") }
+                        else { Text(LocalizedStringKey(sort.localizationKey)) }
+                    }
+                }
+            }
+            Section("library.filter") {
+                ForEach(LibraryAvailabilityFilter.allCases, id: \.self) { filter in
+                    Button { onChange(selectedSort, filter) } label: {
+                        if filter == selectedFilter { Label(LocalizedStringKey(filter.localizationKey), systemImage: "checkmark") }
+                        else { Text(LocalizedStringKey(filter.localizationKey)) }
+                    }
+                }
+            }
         } label: {
             Image(systemName: "arrow.up.arrow.down")
                 .font(.system(size: 14, weight: .semibold))
@@ -945,11 +996,11 @@ private struct CollectionDetailModel: Sendable {
             self.titleKey = titleKey
             self.metadataKey = metadataKey
             self.heroArtwork = artwork
-        case let .release(title, metadataKey, artwork):
+        case let .release(_, title, artist):
             self.kind = .release
             self.titleKey = title
-            self.metadataKey = metadataKey
-            self.heroArtwork = artwork
+            self.metadataKey = artist
+            self.heroArtwork = .mistyLake
         case .liked:
             self.kind = .liked
             self.titleKey = "library.liked"
@@ -983,6 +1034,10 @@ private struct CollectionTrackModel: Identifiable, Sendable {
     let id: String
     let title: String
     let artist: String
+    let artistNames: [String]
+    let albumTitle: String?
+    let albumArtist: String?
+    let releaseID: String?
     let durationText: String
     let artwork: CollectionTrackArtwork
     var artworkURL: URL?
@@ -992,6 +1047,10 @@ private struct CollectionTrackModel: Identifiable, Sendable {
         id: String,
         title: String,
         artist: String,
+        artistNames: [String]? = nil,
+        albumTitle: String? = nil,
+        albumArtist: String? = nil,
+        releaseID: String? = nil,
         durationText: String,
         artwork: CollectionTrackArtwork,
         artworkURL: URL? = nil,
@@ -1000,6 +1059,10 @@ private struct CollectionTrackModel: Identifiable, Sendable {
         self.id = id
         self.title = title
         self.artist = artist
+        self.artistNames = artistNames ?? [artist]
+        self.albumTitle = albumTitle
+        self.albumArtist = albumArtist
+        self.releaseID = releaseID
         self.durationText = durationText
         self.artwork = artwork
         self.artworkURL = artworkURL
@@ -1010,6 +1073,10 @@ private struct CollectionTrackModel: Identifiable, Sendable {
         id = playableTrack.id
         title = playableTrack.title
         artist = playableTrack.artist
+        artistNames = playableTrack.artistNames
+        albumTitle = playableTrack.albumTitle
+        albumArtist = playableTrack.albumArtist
+        releaseID = playableTrack.releaseID
         durationText = Self.formattedDuration(playableTrack.durationSeconds)
         artwork = .mistyLake
         artworkURL = playableTrack.artworkURL
@@ -1021,6 +1088,10 @@ private struct CollectionTrackModel: Identifiable, Sendable {
             id: id,
             title: title,
             artist: artist,
+            artistNames: artistNames,
+            albumTitle: albumTitle,
+            albumArtist: albumArtist,
+            releaseID: releaseID,
             durationSeconds: durationSeconds,
             artworkName: artwork.assetName,
             artworkURL: artworkURL,

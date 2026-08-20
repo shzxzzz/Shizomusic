@@ -7,7 +7,13 @@ struct ArtistSectionListScreen: View {
     let destination: ArtistSectionDestination
 
     private var artist: LocalArtist? { localLibrary.artists.first { $0.name == destination.artistName } }
-    private var releases: [LocalRelease] { localLibrary.releases.filter { $0.artist == destination.artistName } }
+    private var releases: [LocalRelease] {
+        localLibrary.releases.filter { release in
+            release.tracks.contains { track in
+                track.artistNames.contains { $0.libraryNormalized == destination.artistName.libraryNormalized }
+            }
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -28,7 +34,7 @@ struct ArtistSectionListScreen: View {
         case .allTracks:
             SearchTrackResults(tracks: artist?.tracks ?? []) { track in
                 let tracks = artist?.tracks ?? []
-                playback.play(tracks, startingAt: tracks.firstIndex(of: track) ?? 0)
+                playback.play(tracks, startingAt: tracks.firstIndex(of: track) ?? 0, context: .artist(destination.artistName.libraryNormalized))
             }
         case .releases:
             SearchReleaseResults(releases: releases)

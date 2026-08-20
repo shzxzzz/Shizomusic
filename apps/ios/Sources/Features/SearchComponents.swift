@@ -91,7 +91,7 @@ struct SearchReleaseResults: View {
                 SearchSectionTitle("search.releases")
                 LazyVGrid(columns: columns, spacing: 18) {
                     ForEach(releases) { release in
-                        NavigationLink(value: CollectionDetailDestination.release(title: release.title, metadataKey: release.artist, artwork: .mistyLake)) {
+                        NavigationLink(value: CollectionDetailDestination.release(id: release.id, title: release.title, artist: release.artist)) {
                             VStack(alignment: .leading, spacing: 7) {
                                 TrackArtworkView(artworkURL: release.artworkURL, fallbackName: "MistyLake")
                                     .scaledToFill().aspectRatio(1, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 14))

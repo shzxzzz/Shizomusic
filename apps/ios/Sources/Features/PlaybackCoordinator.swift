@@ -30,7 +30,10 @@ struct PlayableTrack: Identifiable, Hashable, Codable, Sendable {
     let id: String
     let title: String
     let artist: String
+    let artistNames: [String]
     let albumTitle: String?
+    let albumArtist: String?
+    let releaseID: String?
     let durationSeconds: Int
     let artworkName: String
     let artworkURL: URL?
@@ -40,7 +43,10 @@ struct PlayableTrack: Identifiable, Hashable, Codable, Sendable {
         id: String,
         title: String,
         artist: String,
+        artistNames: [String]? = nil,
         albumTitle: String? = nil,
+        albumArtist: String? = nil,
+        releaseID: String? = nil,
         durationSeconds: Int,
         artworkName: String,
         artworkURL: URL? = nil,
@@ -49,7 +55,10 @@ struct PlayableTrack: Identifiable, Hashable, Codable, Sendable {
         self.id = id
         self.title = title
         self.artist = artist
+        self.artistNames = artistNames ?? [artist]
         self.albumTitle = albumTitle
+        self.albumArtist = albumArtist
+        self.releaseID = releaseID
         self.durationSeconds = durationSeconds
         self.artworkName = artworkName
         self.artworkURL = artworkURL
@@ -81,6 +90,7 @@ final class PlaybackCoordinator: ObservableObject {
     @Published private(set) var isPlaying = false
     @Published private(set) var elapsedSeconds: Double = 0
     @Published private(set) var playbackError: String?
+    @Published private(set) var queueContext: QueueSourceContext = .adHoc
     @Published var isShuffleEnabled = false {
         didSet { persistState() }
     }
@@ -102,15 +112,26 @@ final class PlaybackCoordinator: ObservableObject {
     private var routeObserver: NSObjectProtocol?
     private var shouldResumeAfterInterruption = false
     private var isRestoring = true
+    private let queueRepository: any PlaybackQueueRepository
+    private var persistenceTask: Task<Void, Never>?
 
-    private static let stateKey = "playback.queue.v1"
-
-    init() {
+    init(
+        queueRepository: any PlaybackQueueRepository = GRDBPlaybackQueueRepository(),
+        restoresQueue: Bool = true
+    ) {
+        self.queueRepository = queueRepository
         configureAudioSession()
-        restoreState()
         observePlayer()
         configureRemoteCommands()
-        isRestoring = false
+        UserDefaults.standard.removeObject(forKey: "playback.queue.v1")
+        if restoresQueue {
+            Task { [weak self] in
+                await self?.restoreState()
+                self?.isRestoring = false
+            }
+        } else {
+            isRestoring = false
+        }
     }
 
     var progress: Double {
@@ -171,9 +192,14 @@ final class PlaybackCoordinator: ObservableObject {
         }
     }
 
-    func play(_ tracks: [PlayableTrack], startingAt index: Int = 0) {
+    func play(
+        _ tracks: [PlayableTrack],
+        startingAt index: Int = 0,
+        context: QueueSourceContext = .adHoc
+    ) {
         guard tracks.indices.contains(index) else { return }
         playbackError = nil
+        queueContext = context
         playbackHistory.removeAll()
         if isShuffleEnabled {
             let selected = tracks[index]
@@ -564,47 +590,44 @@ final class PlaybackCoordinator: ObservableObject {
         center.changeShuffleModeCommand.currentShuffleType = isShuffleEnabled ? .items : .off
     }
 
-    private struct PersistedState: Codable {
-        let queue: [PlayableTrack]
-        let history: [PlayableTrack]?
-        let currentID: String?
-        let elapsedSeconds: Double
-        let shuffle: Bool
-        let repeatMode: RepeatMode
-    }
-
     private func persistState() {
         guard !isRestoring else { return }
-        let state = PersistedState(
-            queue: queue,
-            history: playbackHistory,
-            currentID: currentTrack == .empty ? nil : currentTrack.id,
-            elapsedSeconds: elapsedSeconds,
-            shuffle: isShuffleEnabled,
-            repeatMode: repeatMode
-        )
-        if let data = try? JSONEncoder().encode(state) {
-            UserDefaults.standard.set(data, forKey: Self.stateKey)
+        persistenceTask?.cancel()
+        let repository = queueRepository
+        let history = playbackHistory
+        let current = currentTrack == .empty ? nil : currentTrack
+        let upcoming = upcomingTracks
+        let elapsed = elapsedSeconds
+        let shuffle = isShuffleEnabled
+        let repeatValue = repeatMode.rawValue
+        let context = queueContext
+        persistenceTask = Task {
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            try? await repository.save(
+                history: history,
+                current: current,
+                upcoming: upcoming,
+                elapsedSeconds: elapsed,
+                shuffleEnabled: shuffle,
+                repeatMode: repeatValue,
+                context: context
+            )
         }
     }
 
-    private func restoreState() {
-        guard let data = UserDefaults.standard.data(forKey: Self.stateKey),
-              let state = try? JSONDecoder().decode(PersistedState.self, from: data) else { return }
-        queue = state.queue.filter { track in
-            guard let url = track.fileURL else { return true }
-            return FileManager.default.fileExists(atPath: url.path)
-        }
-        playbackHistory = (state.history ?? []).filter { track in
-            guard let url = track.fileURL else { return true }
-            return FileManager.default.fileExists(atPath: url.path)
-        }
-        isShuffleEnabled = state.shuffle
-        repeatMode = state.repeatMode
-        guard let currentID = state.currentID,
-              let index = queue.firstIndex(where: { $0.id == currentID }) else { return }
-        currentIndex = index
-        currentTrack = queue[index]
+    private func restoreState() async {
+        guard let state = try? await queueRepository.load() else { return }
+        let history = state.items.filter { $0.status == .history }.sorted { $0.position < $1.position }.map(\.track)
+        let current = state.items.first { $0.status == .current }?.track
+        let upcoming = state.items.filter { $0.status == .upcoming }.sorted { $0.position < $1.position }.map(\.track)
+        playbackHistory = history
+        queue = history + (current.map { [$0] } ?? []) + upcoming
+        currentIndex = current == nil ? nil : history.count
+        currentTrack = current ?? .empty
+        isShuffleEnabled = state.shuffleEnabled
+        repeatMode = RepeatMode(rawValue: state.repeatMode) ?? .off
+        queueContext = state.context
         if let url = currentTrack.fileURL {
             player.replaceCurrentItem(with: AVPlayerItem(url: url))
             seek(to: state.elapsedSeconds)

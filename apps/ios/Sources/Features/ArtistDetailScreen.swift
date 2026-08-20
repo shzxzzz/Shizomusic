@@ -26,7 +26,13 @@ struct ArtistDetailScreen: View {
     let destination: ArtistDetailDestination
 
     private var artist: LocalArtist? { localLibrary.artists.first { $0.name == destination.name } }
-    private var releases: [LocalRelease] { localLibrary.releases.filter { $0.artist == destination.name } }
+    private var releases: [LocalRelease] {
+        localLibrary.releases.filter { release in
+            release.tracks.contains { track in
+                track.artistNames.contains { $0.libraryNormalized == destination.name.libraryNormalized }
+            }
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -35,7 +41,7 @@ struct ArtistDetailScreen: View {
                 LazyVStack(alignment: .leading, spacing: 24) {
                     header
                     if let artist {
-                        Button { playback.play(artist.tracks) } label: { Label("collection.play", systemImage: "play.fill") }
+                        Button { playback.play(artist.tracks, context: .artist(artist.id)) } label: { Label("collection.play", systemImage: "play.fill") }
                             .buttonStyle(.borderedProminent).tint(.white).foregroundStyle(.black)
                         SearchTrackResults(tracks: artist.tracks, onPlay: play)
                         SearchReleaseResults(releases: releases)
@@ -66,7 +72,7 @@ struct ArtistDetailScreen: View {
 
     private func play(_ track: PlayableTrack) {
         guard let artist else { return }
-        playback.play(artist.tracks, startingAt: artist.tracks.firstIndex(of: track) ?? 0)
+        playback.play(artist.tracks, startingAt: artist.tracks.firstIndex(of: track) ?? 0, context: .artist(artist.id))
     }
 }
 

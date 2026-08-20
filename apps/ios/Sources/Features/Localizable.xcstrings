@@ -250,7 +250,24 @@
     "search.nothing_found" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Nothing found" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Ничего не найдено" } } } },
     "search.try_another_query" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Try another title, artist, or album." } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Попробуйте другое название, артиста или альбом." } } } },
     "search.playlists_empty_title" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "No matching playlists" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Нет подходящих плейлистов" } } } },
-    "search.playlists_empty_detail" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Local playlist storage has not been created yet." } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Локальное хранилище плейлистов ещё не создано." } } } }
+    "search.playlists_empty_detail" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Local playlist storage has not been created yet." } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Локальное хранилище плейлистов ещё не создано." } } } },
+    "library.loading" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading library…" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Загрузка медиатеки…" } } } },
+    "library.error_title" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Library unavailable" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Медиатека недоступна" } } } },
+    "library.all_tracks" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "All tracks" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Все треки" } } } },
+    "library.all_tracks_detail" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Database library" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Медиатека из базы" } } } },
+    "library.tracks_empty_title" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "No tracks" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Нет треков" } } } },
+    "library.sort" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Sort" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Сортировка" } } } },
+    "library.filter" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Filter" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Фильтр" } } } },
+    "library.sort_title" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Title" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Название" } } } },
+    "library.sort_artist" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Artist" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Исполнитель" } } } },
+    "library.sort_album" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Album" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Альбом" } } } },
+    "library.sort_recentlyAdded" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Recently added" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Недавно добавленные" } } } },
+    "library.sort_duration" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Duration" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Длительность" } } } },
+    "library.filter_all" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "All sources" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Все источники" } } } },
+    "library.filter_available" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Available locally" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Доступные локально" } } } },
+    "library.filter_missing" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Missing files" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Отсутствующие файлы" } } } },
+    "library.delete_file_title" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete local file?" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Удалить локальный файл?" } } } },
+    "library.delete_file_confirm" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete file" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Удалить файл" } } } }
   },
   "version" : "1.0"
 }

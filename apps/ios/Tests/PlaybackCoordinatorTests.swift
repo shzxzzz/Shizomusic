@@ -20,7 +20,7 @@ struct PlaybackCoordinatorTests {
             durationSeconds: 90,
             artworkName: "MistyLake"
         )
-        let playback = PlaybackCoordinator()
+        let playback = PlaybackCoordinator(restoresQueue: false)
 
         playback.play([first, second])
         #expect(playback.currentTrack.id == first.id)
@@ -58,7 +58,7 @@ struct PlaybackCoordinatorTests {
             durationSeconds: 60,
             artworkName: "MistyLake"
         )
-        let playback = PlaybackCoordinator()
+        let playback = PlaybackCoordinator(restoresQueue: false)
 
         playback.play(tracks)
         playback.playNext(inserted)
@@ -77,7 +77,7 @@ struct PlaybackCoordinatorTests {
                 artworkName: "MistyLake"
             )
         }
-        let playback = PlaybackCoordinator()
+        let playback = PlaybackCoordinator(restoresQueue: false)
 
         playback.play(tracks)
         let originalUpcoming = playback.upcomingTracks
@@ -92,7 +92,7 @@ struct PlaybackCoordinatorTests {
     @Test @MainActor
     func historyIsSeparateFromUpcomingQueue() {
         let tracks = makeTracks(3, prefix: "history")
-        let playback = PlaybackCoordinator()
+        let playback = PlaybackCoordinator(restoresQueue: false)
 
         playback.play(tracks)
         playback.next()
@@ -109,7 +109,7 @@ struct PlaybackCoordinatorTests {
     @Test @MainActor
     func upcomingItemsCanBeRemovedAndCleared() {
         let tracks = makeTracks(4, prefix: "remove")
-        let playback = PlaybackCoordinator()
+        let playback = PlaybackCoordinator(restoresQueue: false)
 
         playback.play(tracks)
         playback.removeUpcoming(atOffsets: IndexSet(integer: 1))

@@ -10,22 +10,23 @@ struct LocalArtist: Identifiable, Hashable, Sendable {
 }
 
 struct LocalRelease: Identifiable, Hashable, Sendable {
+    let id: String
     let title: String
     let artist: String
     let tracks: [PlayableTrack]
 
-    var id: String { "\(artist)\u{1f}\(title)" }
     var artworkURL: URL? { tracks.compactMap(\.artworkURL).first }
     var durationSeconds: Int { tracks.reduce(0) { $0 + $1.durationSeconds } }
 }
 
 extension Collection where Element == PlayableTrack {
     var localArtists: [LocalArtist] {
-        Dictionary(grouping: self, by: \.artist)
+        let pairs = flatMap { track in track.artistNames.map { ($0, track) } }
+        return Dictionary(grouping: pairs, by: { $0.0.libraryNormalized })
             .map { group in
                 LocalArtist(
-                    name: group.key,
-                    tracks: group.value.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+                    name: group.value.first?.0 ?? group.key,
+                    tracks: group.value.map(\.1).sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
                 )
             }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
@@ -37,14 +38,14 @@ extension Collection where Element == PlayableTrack {
             return !album.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
         return Dictionary(grouping: withAlbums) { track in
-            "\(track.artist)\u{1f}\(track.albumTitle ?? "")"
+            track.releaseID ?? "legacy:\(track.albumTitle?.libraryNormalized ?? "")"
         }
         .compactMap { key, tracks -> LocalRelease? in
-            let parts = key.components(separatedBy: "\u{1f}")
-            guard parts.count == 2 else { return nil }
+            guard let first = tracks.first, let title = first.albumTitle else { return nil }
             return LocalRelease(
-                title: parts[1],
-                artist: parts[0],
+                id: key,
+                title: title,
+                artist: first.albumArtist ?? first.artistNames.first ?? first.artist,
                 tracks: tracks.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
             )
         }
