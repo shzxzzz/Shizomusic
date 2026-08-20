@@ -61,9 +61,8 @@ struct LibraryView: View {
         .environmentObject(localLibrary)
         .environmentObject(playlistStore)
         .environmentObject(statisticsStore)
-        .environmentObject(syncEngine)
         .safeAreaInset(edge: .top, spacing: 0) {
-            SyncStatusBanner()
+            SyncStatusBanner(sync: syncEngine)
         }
         .task {
             await localLibrary.scan()
@@ -108,7 +107,7 @@ struct LibraryView: View {
 }
 
 private struct SyncStatusBanner: View {
-    @EnvironmentObject private var sync: SyncEngine
+    @ObservedObject var sync: SyncEngine
     @State private var showsDiagnostics = false
 
     var body: some View {
@@ -130,7 +129,7 @@ private struct SyncStatusBanner: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 8)
             .background(.ultraThinMaterial)
-            .sheet(isPresented: $showsDiagnostics) { SyncDiagnosticsScreen() }
+            .sheet(isPresented: $showsDiagnostics) { SyncDiagnosticsScreen(sync: sync) }
         }
     }
 
@@ -146,7 +145,7 @@ private struct SyncStatusBanner: View {
 }
 
 private struct SyncDiagnosticsScreen: View {
-    @EnvironmentObject private var sync: SyncEngine
+    @ObservedObject var sync: SyncEngine
 
     var body: some View {
         NavigationStack {
