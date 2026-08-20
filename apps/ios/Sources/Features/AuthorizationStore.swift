@@ -3,6 +3,10 @@ import UIKit
 
 @MainActor
 final class AuthorizationStore: ObservableObject {
+    struct SyncCredentials: Sendable {
+        let client: GeneratedAPIClient
+        let accessToken: String
+    }
     enum Phase {
         case loading
         case unauthenticated
@@ -134,6 +138,23 @@ final class AuthorizationStore: ObservableObject {
         }
     }
 
+    func syncCredentials() async throws -> SyncCredentials? {
+        guard case let .authenticated(current) = phase else { return nil }
+        var session = current
+        if Self.isExpiringSoon(session.accessExpiresAt) {
+            session = try await client.refresh(refreshToken: session.refreshToken)
+            try save(session)
+            phase = .authenticated(session)
+        }
+        return SyncCredentials(client: client, accessToken: session.accessToken)
+    }
+
+    func handleSyncError(_ error: APIErrorResponse) {
+        guard error.code == "device_revoked" || error.code == "unauthorized" else { return }
+        clearSession()
+        phase = error.code == "device_revoked" ? .revoked : .unauthenticated
+    }
+
     private func run(_ operation: () async throws -> Void) async {
         isWorking = true
         defer { isWorking = false }
@@ -196,6 +217,13 @@ final class AuthorizationStore: ObservableObject {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed), let scheme = url.scheme, ["http", "https"].contains(scheme), url.host != nil else { return nil }
         return url
+    }
+
+    private static func isExpiringSoon(_ value: String) -> Bool {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value) ?? .distantPast
+        return date.timeIntervalSinceNow < 60
     }
 
     private func cachedSession() -> APIAuthSession? {

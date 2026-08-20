@@ -195,6 +195,64 @@ final class LibraryDatabase: @unchecked Sendable {
                 CREATE INDEX listeningEvent_type_date ON listeningEvent(eventType, occurredAt);
                 """)
         }
+        migrator.registerMigration("v4.offline-sync") { db in
+            try db.execute(sql: """
+                ALTER TABLE playlist ADD COLUMN syncStatus TEXT NOT NULL DEFAULT 'local';
+                ALTER TABLE playlist ADD COLUMN lastSyncedCursor INTEGER NOT NULL DEFAULT 0;
+
+                CREATE TABLE syncOperation (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    entityType TEXT NOT NULL,
+                    entityID TEXT NOT NULL,
+                    operationType TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    createdAt DATETIME NOT NULL,
+                    attemptCount INTEGER NOT NULL DEFAULT 0,
+                    nextAttemptAt DATETIME NOT NULL,
+                    state TEXT NOT NULL DEFAULT 'pending',
+                    lastError TEXT
+                );
+                CREATE INDEX syncOperation_ready ON syncOperation(state, nextAttemptAt, createdAt);
+                CREATE INDEX syncOperation_entity ON syncOperation(entityType, entityID);
+
+                CREATE TABLE syncState (
+                    id INTEGER PRIMARY KEY CHECK(id = 1),
+                    cursor INTEGER NOT NULL DEFAULT 0,
+                    lastSuccessfulSyncAt DATETIME,
+                    lastError TEXT
+                );
+                INSERT INTO syncState(id, cursor) VALUES (1, 0);
+
+                CREATE TABLE syncConflict (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    operationID TEXT NOT NULL,
+                    entityType TEXT NOT NULL,
+                    entityID TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    localPayload TEXT NOT NULL,
+                    serverPayload TEXT NOT NULL,
+                    createdAt DATETIME NOT NULL,
+                    resolvedAt DATETIME
+                );
+                CREATE INDEX syncConflict_unresolved ON syncConflict(resolvedAt, createdAt);
+
+                """)
+        }
+        migrator.registerMigration("v5.deferred-sync-changes") { db in
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS syncDeferredChange (
+                    operationID TEXT PRIMARY KEY NOT NULL,
+                    cursor INTEGER NOT NULL,
+                    actorDeviceID TEXT NOT NULL,
+                    entityType TEXT NOT NULL,
+                    entityID TEXT NOT NULL,
+                    operationType TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    clientTimestamp DATETIME NOT NULL,
+                    reason TEXT NOT NULL
+                );
+                """)
+        }
         return migrator
     }
 }

@@ -4,6 +4,10 @@ enum PlaylistCoverStyle: String, CaseIterable, Codable, Hashable, Sendable {
     case violet, mistyLake, sunset, silver, midnight, auroraShore
 }
 
+enum DomainSyncStatus: String, Codable, Hashable, Sendable {
+    case local, pending, synced, failed
+}
+
 struct PlaylistItem: Identifiable, Hashable, Sendable {
     let id: UUID
     let playlistID: UUID
@@ -20,6 +24,8 @@ struct Playlist: Identifiable, Hashable, Sendable {
     var items: [PlaylistItem]
     let createdAt: Date
     var updatedAt: Date
+    var syncStatus: DomainSyncStatus = .local
+    var lastSyncedCursor: Int64 = 0
 
     var tracks: [PlayableTrack] { items.map(\.track) }
 }

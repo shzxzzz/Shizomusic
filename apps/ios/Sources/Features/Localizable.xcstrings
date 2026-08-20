@@ -319,7 +319,20 @@
     "auth.revoke_user" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Revoke user" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Отозвать пользователя" } } } },
     "auth.unauthorized" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Authorization has expired." } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Авторизация истекла." } } } },
     "auth.forbidden" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Owner access is required." } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Требуются права владельца." } } } },
-    "auth.connect_server" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Connect to server" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Подключиться к серверу" } } } }
+    "auth.connect_server" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Connect to server" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Подключиться к серверу" } } } },
+    "sync.local" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Offline · changes stay on this iPhone" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Офлайн · изменения остаются на этом iPhone" } } } },
+    "sync.pending" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Waiting to sync" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Ожидает синхронизации" } } } },
+    "sync.syncing" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Syncing…" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Синхронизация…" } } } },
+    "sync.synced" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Synced" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Синхронизировано" } } } },
+    "sync.failed" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Sync needs attention" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Ошибка синхронизации" } } } },
+    "sync.retry" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Retry" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Повторить" } } } },
+    "sync.status" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Sync status" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Состояние синхронизации" } } } },
+    "sync.conflicts" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Conflicts" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Конфликты" } } } },
+    "sync.cursor" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Server cursor" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Курсор сервера" } } } },
+    "sync.last_success" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Last successful sync" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Последняя успешная синхронизация" } } } },
+    "sync.diagnostics" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Sync diagnostics" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Диагностика синхронизации" } } } },
+    "sync.local_payload" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Local payload" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Локальные данные" } } } },
+    "sync.server_payload" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Server payload" } }, "ru" : { "stringUnit" : { "state" : "translated", "value" : "Данные сервера" } } } }
   },
   "version" : "1.0"
 }

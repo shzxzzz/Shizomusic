@@ -43,6 +43,49 @@ struct APIErrorResponse: Codable, Error, Sendable {
     let requestID: String
 }
 
+struct APISyncOperation: Codable, Sendable {
+    let id: UUID
+    let entityType: SyncEntityType
+    let entityId: String
+    let operationType: SyncOperationType
+    let payload: String
+    let clientTimestamp: String
+}
+
+struct APISyncConflict: Codable, Sendable {
+    let id: UUID
+    let operationId: UUID
+    let entityType: SyncEntityType
+    let entityId: String
+    let reason: String
+    let localPayload: String
+    let serverPayload: String
+    let createdAt: String
+}
+
+struct APISyncPushResponse: Codable, Sendable {
+    let acceptedOperationIds: [UUID]
+    let cursor: String
+    let conflicts: [APISyncConflict]
+}
+
+struct APISyncChange: Codable, Sendable {
+    let id: UUID
+    let cursor: String
+    let actorDeviceId: UUID
+    let entityType: SyncEntityType
+    let entityId: String
+    let operationType: SyncOperationType
+    let payload: String
+    let clientTimestamp: String
+}
+
+struct APISyncPullResponse: Codable, Sendable {
+    let changes: [APISyncChange]
+    let cursor: String
+    let hasMore: Bool
+}
+
 struct GeneratedAPIClient: Sendable {
     let baseURL: URL
     var session: URLSession = .shared
@@ -89,6 +132,19 @@ struct GeneratedAPIClient: Sendable {
 
     func logout(refreshToken: String) async throws {
         try await postWithoutResponse(path: "auth/logout", body: RefreshBody(refreshToken: refreshToken), accessToken: nil)
+    }
+
+    func syncPush(operations: [APISyncOperation], accessToken: String) async throws -> APISyncPushResponse {
+        try await post(path: "sync/push", body: SyncPushBody(operations: operations), accessToken: accessToken)
+    }
+
+    func syncPull(cursor: Int64, limit: Int = 200, accessToken: String) async throws -> APISyncPullResponse {
+        var components = URLComponents(url: baseURL.appending(path: "sync/pull"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "cursor", value: String(cursor)), URLQueryItem(name: "limit", value: String(limit))]
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        return try await perform(request)
     }
 
     private func get<Response: Decodable>(path: String, accessToken: String) async throws -> Response {
@@ -146,4 +202,5 @@ struct GeneratedAPIClient: Sendable {
     private struct CompleteBody: Encodable { let onboardingToken: String; let displayName: String; let avatarData: String? }
     private struct RefreshBody: Encodable { let refreshToken: String }
     private struct InvitationBody: Encodable { let expiresInHours: Int }
+    private struct SyncPushBody: Encodable { let operations: [APISyncOperation] }
 }

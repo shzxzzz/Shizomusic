@@ -7,6 +7,11 @@ struct LibraryView: View {
     @StateObject private var localLibrary = LocalMediaLibrary()
     @StateObject private var playlistStore = PlaylistStore()
     @StateObject private var statisticsStore = StatisticsStore()
+    @StateObject private var syncEngine: SyncEngine
+
+    init(authorization: AuthorizationStore) {
+        _syncEngine = StateObject(wrappedValue: SyncEngine(authorization: authorization))
+    }
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -56,18 +61,35 @@ struct LibraryView: View {
         .environmentObject(localLibrary)
         .environmentObject(playlistStore)
         .environmentObject(statisticsStore)
+        .environmentObject(syncEngine)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            SyncStatusBanner()
+        }
         .task {
             await localLibrary.scan()
             await playlistStore.load()
             playback.replaceLibrary(localLibrary.tracks)
+            await synchronize()
+        }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(15))
+                await synchronize()
+            }
         }
         .onChange(of: localLibrary.tracks) {
             playback.replaceLibrary(localLibrary.tracks)
             Task { await playlistStore.load() }
         }
+        .onChange(of: playlistStore.playlists) {
+            Task { await synchronize() }
+        }
         .onChange(of: scenePhase) {
             guard scenePhase == .active else { return }
-            Task { await localLibrary.scan() }
+            Task {
+                await localLibrary.scan()
+                await synchronize()
+            }
         }
         .sheet(
             item: Binding(
@@ -77,6 +99,90 @@ struct LibraryView: View {
         ) { report in
             ImportReportView(report: report)
         }
+    }
+
+    private func synchronize() async {
+        await syncEngine.synchronize()
+        await playlistStore.load()
+    }
+}
+
+private struct SyncStatusBanner: View {
+    @EnvironmentObject private var sync: SyncEngine
+    @State private var showsDiagnostics = false
+
+    var body: some View {
+        if let content {
+            HStack(spacing: 8) {
+                Button { showsDiagnostics = true } label: {
+                    HStack(spacing: 8) {
+                    Image(systemName: content.icon)
+                    Text(content.title).font(.caption.weight(.semibold)).lineLimit(1)
+                    }
+                    .foregroundStyle(content.color)
+                }
+                .buttonStyle(.plain)
+                Spacer(minLength: 8)
+                if case .failed = sync.state {
+                    Button("sync.retry") { Task { await sync.retry() } }
+                        .font(.caption.bold()).buttonStyle(.borderless)
+                }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            .background(.ultraThinMaterial)
+            .sheet(isPresented: $showsDiagnostics) { SyncDiagnosticsScreen() }
+        }
+    }
+
+    private var content: (icon: String, title: LocalizedStringKey, color: Color)? {
+        switch sync.state {
+        case .local: ("wifi.slash", "sync.local", .secondary)
+        case .pending: ("arrow.triangle.2.circlepath", "sync.pending", .orange)
+        case .syncing: ("arrow.triangle.2.circlepath", "sync.syncing", .cyan)
+        case .failed: ("exclamationmark.icloud.fill", "sync.failed", .orange)
+        case .synced: nil
+        }
+    }
+}
+
+private struct SyncDiagnosticsScreen: View {
+    @EnvironmentObject private var sync: SyncEngine
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("sync.status") {
+                    LabeledContent("sync.pending", value: "\(sync.overview.pendingCount)")
+                    LabeledContent("sync.failed", value: "\(sync.overview.failedCount)")
+                    LabeledContent("sync.conflicts", value: "\(sync.overview.conflictCount)")
+                    LabeledContent("sync.cursor", value: "\(sync.overview.cursor)")
+                    if let date = sync.overview.lastSuccessfulSyncAt { LabeledContent("sync.last_success", value: date.formatted()) }
+                }
+                if !sync.conflicts.isEmpty {
+                    Section("sync.conflicts") {
+                        ForEach(sync.conflicts) { conflict in
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(verbatim: conflict.reason).font(.subheadline.bold())
+                                Text(verbatim: "\(conflict.entityType.rawValue) · \(conflict.entityID)")
+                                    .font(.caption.monospaced()).foregroundStyle(.secondary)
+                                Text(conflict.createdAt, style: .relative).font(.caption).foregroundStyle(.secondary)
+                                DisclosureGroup("sync.local_payload") {
+                                    Text(verbatim: conflict.localPayload).font(.caption.monospaced()).textSelection(.enabled)
+                                }
+                                DisclosureGroup("sync.server_payload") {
+                                    Text(verbatim: conflict.serverPayload).font(.caption.monospaced()).textSelection(.enabled)
+                                }
+                            }
+                        }
+                    }
+                }
+                Section {
+                    Button("sync.retry") { Task { await sync.retry() } }
+                }
+            }
+            .navigationTitle("sync.diagnostics")
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 

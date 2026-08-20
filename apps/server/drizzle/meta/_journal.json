@@ -15,6 +15,13 @@
       "when": 1787219640626,
       "tag": "0001_device_identity_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787229191407,
+      "tag": "0002_purple_tarot",
+      "breakpoints": true
     }
   ]
 }

@@ -4,5 +4,12 @@
   "version": "0.1.0",
   "workspaces": ["apps/server"],
   "engines": { "node": ">=24 <25" },
-  "scripts": { "test:server": "npm --workspace @shizomusic/server test", "dev:server": "npm --workspace @shizomusic/server run dev" }
+  "scripts": {
+    "test:server": "npm --workspace @shizomusic/server test",
+    "dev:server": "npm --workspace @shizomusic/server run dev",
+    "invite": "npm --workspace @shizomusic/server run invite --",
+    "devices": "npm --workspace @shizomusic/server run devices --",
+    "revoke-device": "npm --workspace @shizomusic/server run revoke-device --",
+    "revoke-user": "npm --workspace @shizomusic/server run revoke-user --"
+  }
 }

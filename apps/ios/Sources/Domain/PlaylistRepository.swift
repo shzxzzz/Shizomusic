@@ -2,6 +2,11 @@ import Foundation
 import GRDB
 
 actor GRDBPlaylistRepository: PlaylistRepository {
+    private enum CustomCoverOverride {
+        case preserve
+        case replace(String?)
+    }
+
     private let database: LibraryDatabase
     private static let rankStep = 1_024.0
 
@@ -45,7 +50,9 @@ actor GRDBPlaylistRepository: PlaylistRepository {
                     customCoverURL: customCoverPath.map(URL.init(fileURLWithPath:)),
                     items: items,
                     createdAt: row["createdAt"],
-                    updatedAt: row["updatedAt"]
+                    updatedAt: row["updatedAt"],
+                    syncStatus: DomainSyncStatus(rawValue: row["syncStatus"]) ?? .local,
+                    lastSyncedCursor: row["lastSyncedCursor"]
                 )
             }
         }
@@ -59,29 +66,41 @@ actor GRDBPlaylistRepository: PlaylistRepository {
                 sql: "INSERT INTO playlist(id, title, coverStyle, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)",
                 arguments: [id.uuidString, title, coverStyle.rawValue, now, now]
             )
+            let payload = PlaylistSyncPayload(id: id, title: title, coverStyle: coverStyle.rawValue, customCoverData: nil, createdAt: now, updatedAt: now, deletedAt: nil)
+            try SyncOutbox.enqueue(db, entityType: .playlist, entityID: id.uuidString, operationType: .playlistUpsert, payload: payload, playlistID: id.uuidString, createdAt: now)
         }
         return id
     }
 
     func rename(id: UUID, title: String) async throws {
-        try await update(id: id, column: "title", value: title)
+        try await update(id: id, column: "title", value: title, customCoverOverride: .preserve)
     }
 
     func changeCover(id: UUID, coverStyle: PlaylistCoverStyle) async throws {
         try await database.writer.write { db in
+            let now = Date()
             try db.execute(
                 sql: "UPDATE playlist SET coverStyle = ?, customCoverPath = NULL, updatedAt = ? WHERE id = ?",
-                arguments: [coverStyle.rawValue, Date(), id.uuidString]
+                arguments: [coverStyle.rawValue, now, id.uuidString]
             )
+            if let payload = try Self.playlistPayload(id: id, updatedAt: now, customCoverOverride: .replace(nil), db: db) {
+                try SyncOutbox.enqueue(db, entityType: .playlist, entityID: id.uuidString, operationType: .playlistUpsert, payload: payload, playlistID: id.uuidString, createdAt: now)
+            }
         }
     }
 
     func setCustomCover(id: UUID, fileURL: URL) async throws {
-        try await update(id: id, column: "customCoverPath", value: fileURL.path)
+        let coverData = try Data(contentsOf: fileURL).base64EncodedString()
+        try await update(id: id, column: "customCoverPath", value: fileURL.path, customCoverOverride: .replace(coverData))
     }
 
     func delete(id: UUID) async throws {
         try await database.writer.write { db in
+            let now = Date()
+            let payload = try Self.playlistPayload(id: id, updatedAt: now, deletedAt: now, customCoverOverride: .preserve, db: db)
+            if let payload {
+                try SyncOutbox.enqueue(db, entityType: .playlist, entityID: id.uuidString, operationType: .playlistDelete, payload: payload, playlistID: id.uuidString, createdAt: now)
+            }
             try db.execute(sql: "DELETE FROM playlist WHERE id = ?", arguments: [id.uuidString])
         }
     }
@@ -96,6 +115,7 @@ actor GRDBPlaylistRepository: PlaylistRepository {
                 return existingID
             }
             let itemID = UUID()
+            let now = Date()
             let lastRank = try Double.fetchOne(
                 db,
                 sql: "SELECT rank FROM playlistItem WHERE playlistID = ? ORDER BY rank DESC LIMIT 1",
@@ -103,18 +123,26 @@ actor GRDBPlaylistRepository: PlaylistRepository {
             )
             try db.execute(
                 sql: "INSERT INTO playlistItem(id, playlistID, trackID, rank, createdAt) VALUES (?, ?, ?, ?, ?)",
-                arguments: [itemID.uuidString, playlistID.uuidString, trackID, (lastRank ?? 0) + Self.rankStep, Date()]
+                arguments: [itemID.uuidString, playlistID.uuidString, trackID, (lastRank ?? 0) + Self.rankStep, now]
             )
-            try Self.touch(playlistID, db: db)
+            try Self.touch(playlistID, at: now, db: db)
+            if let payload = try Self.playlistItemPayload(id: itemID, updatedAt: now, deletedAt: nil, db: db) {
+                try SyncOutbox.enqueue(db, entityType: .playlistItem, entityID: itemID.uuidString, operationType: .playlistItemInsert, payload: payload, playlistID: playlistID.uuidString, createdAt: now)
+            }
             return itemID
         }
     }
 
     func remove(itemID: UUID) async throws {
         try await database.writer.write { db in
-            let playlistID = try String.fetchOne(db, sql: "SELECT playlistID FROM playlistItem WHERE id = ?", arguments: [itemID.uuidString])
+            let now = Date()
+            let payload = try Self.playlistItemPayload(id: itemID, updatedAt: now, deletedAt: now, db: db)
+            let playlistID = payload?.playlistId.uuidString
+            if let payload, let playlistID {
+                try SyncOutbox.enqueue(db, entityType: .playlistItem, entityID: itemID.uuidString, operationType: .playlistItemRemove, payload: payload, playlistID: playlistID, createdAt: now)
+            }
             try db.execute(sql: "DELETE FROM playlistItem WHERE id = ?", arguments: [itemID.uuidString])
-            if let playlistID, let id = UUID(uuidString: playlistID) { try Self.touch(id, db: db) }
+            if let playlistID, let id = UUID(uuidString: playlistID) { try Self.touch(id, at: now, db: db) }
         }
     }
 
@@ -135,20 +163,35 @@ actor GRDBPlaylistRepository: PlaylistRepository {
             let previousRank = index > 0 ? try Self.rank(of: ids[index - 1], db: db) : nil
             let nextRank = index + 1 < ids.count ? try Self.rank(of: ids[index + 1], db: db) : nil
             var newRank = Self.fractionalRank(previous: previousRank, next: nextRank)
+            var rebalancedItemIDs: [UUID] = []
             if let previousRank, let nextRank, abs(nextRank - previousRank) < 0.000_001 {
                 for (position, id) in ids.enumerated() {
                     try db.execute(sql: "UPDATE playlistItem SET rank = ? WHERE id = ?", arguments: [Double(position + 1) * Self.rankStep, id])
+                    if id != itemID.uuidString, let value = UUID(uuidString: id) { rebalancedItemIDs.append(value) }
                 }
                 newRank = Double(index + 1) * Self.rankStep
             }
             try db.execute(sql: "UPDATE playlistItem SET rank = ? WHERE id = ?", arguments: [newRank, itemID.uuidString])
-            if let id = UUID(uuidString: playlistID) { try Self.touch(id, db: db) }
+            let now = Date()
+            if let id = UUID(uuidString: playlistID) { try Self.touch(id, at: now, db: db) }
+            if let payload = try Self.playlistItemPayload(id: itemID, updatedAt: now, deletedAt: nil, db: db) {
+                try SyncOutbox.enqueue(db, entityType: .playlistItem, entityID: itemID.uuidString, operationType: .playlistItemMove, payload: payload, playlistID: playlistID, createdAt: now)
+            }
+            for rebalancedID in rebalancedItemIDs {
+                if let payload = try Self.playlistItemPayload(id: rebalancedID, updatedAt: now, deletedAt: nil, db: db) {
+                    try SyncOutbox.enqueue(db, entityType: .playlistItem, entityID: rebalancedID.uuidString, operationType: .playlistItemMove, payload: payload, playlistID: playlistID, createdAt: now)
+                }
+            }
         }
     }
 
-    private func update(id: UUID, column: String, value: String) async throws {
+    private func update(id: UUID, column: String, value: String, customCoverOverride: CustomCoverOverride) async throws {
         try await database.writer.write { db in
-            try db.execute(sql: "UPDATE playlist SET \(column) = ?, updatedAt = ? WHERE id = ?", arguments: [value, Date(), id.uuidString])
+            let now = Date()
+            try db.execute(sql: "UPDATE playlist SET \(column) = ?, updatedAt = ? WHERE id = ?", arguments: [value, now, id.uuidString])
+            if let payload = try Self.playlistPayload(id: id, updatedAt: now, customCoverOverride: customCoverOverride, db: db) {
+                try SyncOutbox.enqueue(db, entityType: .playlist, entityID: id.uuidString, operationType: .playlistUpsert, payload: payload, playlistID: id.uuidString, createdAt: now)
+            }
         }
     }
 
@@ -165,7 +208,44 @@ actor GRDBPlaylistRepository: PlaylistRepository {
         try Double.fetchOne(db, sql: "SELECT rank FROM playlistItem WHERE id = ?", arguments: [itemID])
     }
 
-    private static func touch(_ playlistID: UUID, db: Database) throws {
-        try db.execute(sql: "UPDATE playlist SET updatedAt = ? WHERE id = ?", arguments: [Date(), playlistID.uuidString])
+    private static func touch(_ playlistID: UUID, at date: Date, db: Database) throws {
+        try db.execute(sql: "UPDATE playlist SET updatedAt = ? WHERE id = ?", arguments: [date, playlistID.uuidString])
+    }
+
+    private static func playlistPayload(
+        id: UUID,
+        updatedAt: Date,
+        deletedAt: Date? = nil,
+        customCoverOverride: CustomCoverOverride,
+        db: Database
+    ) throws -> PlaylistSyncPayload? {
+        guard let row = try Row.fetchOne(db, sql: "SELECT * FROM playlist WHERE id = ?", arguments: [id.uuidString]) else { return nil }
+        let path: String? = row["customCoverPath"]
+        let storedCover = path.flatMap { try? Data(contentsOf: URL(fileURLWithPath: $0)).base64EncodedString() }
+        let customCover: String?
+        switch customCoverOverride {
+        case .preserve: customCover = storedCover
+        case let .replace(value): customCover = value
+        }
+        return PlaylistSyncPayload(
+            id: id, title: row["title"], coverStyle: row["coverStyle"], customCoverData: customCover,
+            createdAt: row["createdAt"], updatedAt: updatedAt, deletedAt: deletedAt
+        )
+    }
+
+    private static func playlistItemPayload(id: UUID, updatedAt: Date, deletedAt: Date?, db: Database) throws -> PlaylistItemSyncPayload? {
+        guard let row = try Row.fetchOne(db, sql: "SELECT * FROM playlistItem WHERE id = ?", arguments: [id.uuidString]) else { return nil }
+        let playlistValue: String = row["playlistID"]
+        guard let playlistID = UUID(uuidString: playlistValue) else { return nil }
+        let localTrackID: String = row["trackID"]
+        let syncTrackID = try String.fetchOne(
+            db,
+            sql: "SELECT contentHash FROM trackSource WHERE trackID = ? ORDER BY state = 'available' DESC, modifiedAt DESC LIMIT 1",
+            arguments: [localTrackID]
+        ) ?? localTrackID
+        return PlaylistItemSyncPayload(
+            id: id, playlistId: playlistID, trackId: syncTrackID, rank: row["rank"],
+            createdAt: row["createdAt"], updatedAt: updatedAt, deletedAt: deletedAt
+        )
     }
 }

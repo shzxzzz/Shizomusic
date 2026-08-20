@@ -100,6 +100,30 @@ paths:
       responses:
         '204': { description: User and all devices revoked }
         '403': { $ref: '#/components/responses/Error' }
+  /sync/push:
+    post:
+      summary: Push an idempotent batch of offline operations
+      operationId: pushSyncOperations
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SyncPushRequest' } } }
+      responses:
+        '200': { description: Accepted operations and conflicts, content: { application/json: { schema: { $ref: '#/components/schemas/SyncPushResponse' } } } }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+  /sync/pull:
+    get:
+      summary: Pull canonical changes after an Int64 cursor
+      operationId: pullSyncChanges
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: cursor, required: true, schema: { type: string, pattern: '^[0-9]+$' } }
+        - { in: query, name: limit, required: false, schema: { type: integer, minimum: 1, maximum: 500, default: 200 } }
+      responses:
+        '200': { description: Ordered change-log page, content: { application/json: { schema: { $ref: '#/components/schemas/SyncPullResponse' } } } }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -175,6 +199,59 @@ components:
             refreshExpiresAt: { type: string, format: date-time }
             user: { $ref: '#/components/schemas/User' }
             device: { $ref: '#/components/schemas/Device' }
+    SyncEntityType: { type: string, enum: [playlist, playlistItem] }
+    SyncOperationType:
+      type: string
+      enum: [playlist.upsert, playlist.delete, playlistItem.insert, playlistItem.move, playlistItem.remove]
+    SyncOperation:
+      type: object
+      required: [id, entityType, entityId, operationType, payload, clientTimestamp]
+      properties:
+        id: { type: string, format: uuid }
+        entityType: { $ref: '#/components/schemas/SyncEntityType' }
+        entityId: { type: string }
+        operationType: { $ref: '#/components/schemas/SyncOperationType' }
+        payload: { type: string, description: JSON-encoded domain payload }
+        clientTimestamp: { type: string, format: date-time }
+    SyncChange:
+      allOf:
+        - { $ref: '#/components/schemas/SyncOperation' }
+        - type: object
+          required: [cursor, actorDeviceId]
+          properties:
+            cursor: { type: string, pattern: '^[0-9]+$' }
+            actorDeviceId: { type: string, format: uuid }
+    SyncConflict:
+      type: object
+      required: [id, operationId, entityType, entityId, reason, localPayload, serverPayload, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        operationId: { type: string, format: uuid }
+        entityType: { $ref: '#/components/schemas/SyncEntityType' }
+        entityId: { type: string }
+        reason: { type: string }
+        localPayload: { type: string }
+        serverPayload: { type: string }
+        createdAt: { type: string, format: date-time }
+    SyncPushRequest:
+      type: object
+      required: [operations]
+      properties:
+        operations: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/SyncOperation' } }
+    SyncPushResponse:
+      type: object
+      required: [acceptedOperationIds, cursor, conflicts]
+      properties:
+        acceptedOperationIds: { type: array, items: { type: string, format: uuid } }
+        cursor: { type: string, pattern: '^[0-9]+$' }
+        conflicts: { type: array, items: { $ref: '#/components/schemas/SyncConflict' } }
+    SyncPullResponse:
+      type: object
+      required: [changes, cursor, hasMore]
+      properties:
+        changes: { type: array, items: { $ref: '#/components/schemas/SyncChange' } }
+        cursor: { type: string, pattern: '^[0-9]+$' }
+        hasMore: { type: boolean }
     Error:
       type: object
       required: [code, messageKey, requestID]

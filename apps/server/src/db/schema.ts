@@ -1,4 +1,4 @@
-import { index, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, bigserial, doublePrecision, index, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 export const userRole = pgEnum("user_role", ["owner", "member"]);
 
@@ -51,3 +51,61 @@ export const refreshTokens = pgTable("refresh_tokens", {
   index("refresh_tokens_device_idx").on(table.deviceId),
   index("refresh_tokens_family_idx").on(table.familyId),
 ]);
+
+export const syncedPlaylists = pgTable("synced_playlists", {
+  id: uuid("id").primaryKey(),
+  title: text("title").notNull(),
+  coverStyle: text("cover_style").notNull(),
+  customCoverData: text("custom_cover_data"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  version: bigint("version", { mode: "bigint" }).notNull().default(0n),
+  lastOperationId: uuid("last_operation_id").notNull(),
+});
+
+export const syncedPlaylistItems = pgTable("synced_playlist_items", {
+  id: uuid("id").primaryKey(),
+  playlistId: uuid("playlist_id").notNull(),
+  trackId: text("track_id").notNull(),
+  rank: doublePrecision("rank").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  version: bigint("version", { mode: "bigint" }).notNull().default(0n),
+  lastOperationId: uuid("last_operation_id").notNull(),
+}, (table) => [index("synced_playlist_items_playlist_rank").on(table.playlistId, table.rank)]);
+
+export const syncOperations = pgTable("sync_operations", {
+  id: uuid("id").primaryKey(),
+  actorUserId: uuid("actor_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  actorDeviceId: uuid("actor_device_id").notNull().references(() => devices.id, { onDelete: "cascade" }),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  operationType: text("operation_type").notNull(),
+  payload: jsonb("payload").notNull(),
+  clientTimestamp: timestamp("client_timestamp", { withTimezone: true }).notNull(),
+  receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const syncChanges = pgTable("sync_changes", {
+  cursor: bigserial("cursor", { mode: "bigint" }).primaryKey(),
+  operationId: uuid("operation_id").notNull().references(() => syncOperations.id, { onDelete: "cascade" }),
+  actorDeviceId: uuid("actor_device_id").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  operationType: text("operation_type").notNull(),
+  payload: jsonb("payload").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("sync_changes_cursor_idx").on(table.cursor)]);
+
+export const syncConflicts = pgTable("sync_conflicts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  operationId: uuid("operation_id").notNull().references(() => syncOperations.id, { onDelete: "cascade" }),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  reason: text("reason").notNull(),
+  localPayload: jsonb("local_payload").notNull(),
+  serverPayload: jsonb("server_payload").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("sync_conflicts_operation_idx").on(table.operationId)]);

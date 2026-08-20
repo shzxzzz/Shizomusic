@@ -27,5 +27,7 @@ Listening sessions are recorded as local events for start, pause, seek, skip, in
 
 The authorization flow accepts one-time invitations, stores refresh tokens in Keychain and supports device/user revocation. Selecting local-only mode keeps the complete media workflow available without a server or internet connection.
 
+Playlist mutations and their `SyncOperation` outbox records are committed in one SQLite transaction. `SyncEngine` pushes idempotent UUID operations in batches, pulls an Int64 cursor change log, applies tombstones, retries with exponential backoff and jitter, and preserves conflict diagnostics. Playlist cards expose local/pending/synced/failed state; the compact banner offers manual retry.
+
 The device regression checklist is in
 [`PHYSICAL_DEVICE_TEST_PLAN.md`](PHYSICAL_DEVICE_TEST_PLAN.md).

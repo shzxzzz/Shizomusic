@@ -14,7 +14,7 @@ struct AuthorizationRootView: View {
             case let .profile(token):
                 ProfileOnboardingScreen(onboardingToken: token)
             case .authenticated, .localOnly:
-                LibraryView()
+                LibraryView(authorization: authorization)
             case let .invalidInvitation(messageKey):
                 AuthorizationFailureScreen(
                     icon: "ticket.fill",

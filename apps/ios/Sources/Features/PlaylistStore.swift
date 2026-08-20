@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 @MainActor
 final class PlaylistStore: ObservableObject {
@@ -32,11 +33,18 @@ final class PlaylistStore: ObservableObject {
     func setCustomCover(id: UUID, imageData: Data) async {
         do {
             let fileURL = try await Task.detached(priority: .userInitiated) {
+                guard let source = UIImage(data: imageData) else { throw CocoaError(.fileReadCorruptFile) }
+                let maximum: CGFloat = 768
+                let ratio = min(1, maximum / max(source.size.width, source.size.height))
+                let size = CGSize(width: max(source.size.width * ratio, 1), height: max(source.size.height * ratio, 1))
+                let renderer = UIGraphicsImageRenderer(size: size)
+                let rendered = renderer.image { _ in source.draw(in: CGRect(origin: .zero, size: size)) }
+                guard let normalizedData = rendered.jpegData(compressionQuality: 0.76) else { throw CocoaError(.fileWriteUnknown) }
                 let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
                     .appendingPathComponent("ShizoMusic/PlaylistArtwork", isDirectory: true)
                 try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
                 let url = root.appendingPathComponent("\(id.uuidString).image")
-                try imageData.write(to: url, options: .atomic)
+                try normalizedData.write(to: url, options: .atomic)
                 return url
             }.value
             _ = await mutate { try await self.repository.setCustomCover(id: id, fileURL: fileURL) }

@@ -311,11 +311,42 @@ private struct PlaylistTile: View {
                     }
                     .padding(8)
                 }
+                .overlay(alignment: .topTrailing) {
+                    Image(systemName: playlist.syncStatus.icon)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(playlist.syncStatus.color)
+                        .padding(6)
+                        .background(.black.opacity(0.45), in: Circle())
+                        .padding(6)
+                        .accessibilityLabel(Text(LocalizedStringKey(playlist.syncStatus.localizationKey)))
+                }
 
             Color.clear.frame(height: 0)
         }
         .foregroundStyle(.white)
     }
+}
+
+private extension DomainSyncStatus {
+    var icon: String {
+        switch self {
+        case .local: "iphone"
+        case .pending: "arrow.triangle.2.circlepath"
+        case .synced: "checkmark.icloud.fill"
+        case .failed: "exclamationmark.icloud.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .local: .white.opacity(0.65)
+        case .pending: .orange
+        case .synced: .green
+        case .failed: .red
+        }
+    }
+
+    var localizationKey: String { "sync.\(rawValue)" }
 }
 
 private struct ReleaseTile: View {

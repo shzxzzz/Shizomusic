@@ -4,11 +4,14 @@ import { AuthError, unauthorized } from "./auth/errors.js";
 import { MemoryAuthStore } from "./auth/memory-store.js";
 import type { AuthPrincipal, AuthStore } from "./auth/models.js";
 import { issueOnboardingToken, verifyAccessToken, verifyOnboardingToken } from "./auth/security.js";
+import { MemorySyncStore } from "./sync/memory-store.js";
+import { validateOperation, type SyncStore } from "./sync/models.js";
 
 interface BuildAppOptions {
   authStore?: AuthStore;
   readiness?: () => Promise<void>;
   bootstrapInvitationCode?: string;
+  syncStore?: SyncStore;
 }
 
 function requiredString(value: unknown, field: string): string {
@@ -19,9 +22,10 @@ function requiredString(value: unknown, field: string): string {
 }
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
-  const app = Fastify({ logger: true, requestIdHeader: "x-request-id" });
+  const app = Fastify({ logger: true, requestIdHeader: "x-request-id", bodyLimit: 32_000_000 });
   const authStore = options.authStore ?? new MemoryAuthStore();
   const bootstrapCode = options.bootstrapInvitationCode ?? process.env.OWNER_INVITE_CODE ?? "OWNER-DEVELOPMENT";
+  const syncStore = options.syncStore ?? new MemorySyncStore();
 
   app.register(cors, { origin: false });
   app.addHook("onReady", async () => { await authStore.ensureBootstrapInvitation(bootstrapCode); });
@@ -108,6 +112,32 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     const params = request.params as { userId: string };
     await authStore.revokeUser(await principal(request), params.userId);
     return reply.status(204).send();
+  });
+
+  app.post("/sync/push", async (request) => {
+    const actor = await principal(request);
+    const body = request.body as { operations?: unknown[] } | undefined;
+    if (!Array.isArray(body?.operations) || body.operations.length > 100) {
+      throw new AuthError("invalid_sync_batch", 400, "sync.invalid_batch");
+    }
+    try {
+      return await syncStore.push(actor, body.operations.map(validateOperation));
+    } catch (error) {
+      if (error instanceof AuthError) throw error;
+      throw new AuthError("invalid_sync_operation", 400, "sync.invalid_operation");
+    }
+  });
+
+  app.get("/sync/pull", async (request) => {
+    const actor = await principal(request);
+    const query = request.query as { cursor?: string; limit?: string };
+    let cursor: bigint;
+    try { cursor = BigInt(query.cursor ?? "0"); }
+    catch { throw new AuthError("invalid_cursor", 400, "sync.invalid_cursor"); }
+    if (cursor < 0n) throw new AuthError("invalid_cursor", 400, "sync.invalid_cursor");
+    const requestedLimit = Number(query.limit ?? 200);
+    const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 500) : 200;
+    return syncStore.pull(actor, cursor, limit);
   });
 
   return app;

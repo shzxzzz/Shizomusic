@@ -14,7 +14,12 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "admin": "tsx src/cli.ts",
+    "invite": "tsx src/cli.ts invite",
+    "devices": "tsx src/cli.ts devices",
+    "revoke-device": "tsx src/cli.ts revoke-device",
+    "revoke-user": "tsx src/cli.ts revoke-user"
   },
   "dependencies": {
     "@fastify/cors": "^11.0.0",
