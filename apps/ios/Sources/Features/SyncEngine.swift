@@ -70,6 +70,9 @@ final class SyncEngine: ObservableObject {
                 cursor = nextCursor
                 if !response.hasMore { break }
             }
+            // Pull may have delivered a playlist item whose catalog track was merged
+            // earlier in this synchronization cycle. Resolve it before publishing state.
+            try await repository.retryDeferredChanges()
             await refreshOverview()
             state = overview.failedCount > 0 || overview.conflictCount > 0
                 ? .failed(overview.lastError ?? String(localized: "sync.failed"))

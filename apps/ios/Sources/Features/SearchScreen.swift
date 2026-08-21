@@ -25,14 +25,17 @@ struct SearchScreen: View {
     private var trackResults: [MusicSearchResult] {
         if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return localTracks.map { track in
-                MusicSearchResult(id: track.id, provider: "offline", title: track.title, artist: track.artist,
-                                  album: track.albumTitle, duration: TimeInterval(track.durationSeconds), artworkURL: track.artworkURL,
-                                  webpageURL: nil, streamURL: track.fileURL, capabilities: [.search, .stream, .download],
-                                  attribution: nil, localTrack: track)
+                MusicSearchResult(id: track.id, entityType: .track,
+                    reference: .init(provider: "offline", entityType: .track, externalID: track.id, canonicalURL: nil),
+                    metadataProvider: "offline", audioProvider: "offline", acquisitionMethod: .direct, canAcquire: false,
+                    title: track.title, artist: track.artist, release: track.albumTitle, duration: TimeInterval(track.durationSeconds),
+                    artworkURL: track.artworkURL, streamURL: track.fileURL, attribution: String(localized: "search.source_offline"), localTrack: track)
             }
         }
-        return musicSearch.results
+        return musicSearch.results.filter { $0.entityType == .track }
     }
+    private var externalArtists: [MusicSearchResult] { musicSearch.results.filter { $0.entityType == .artist } }
+    private var externalReleases: [MusicSearchResult] { musicSearch.results.filter { $0.entityType == .release } }
     private var artists: [LocalArtist] {
         localLibrary.artists.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.tracks.contains(where: matches) }
     }
@@ -45,7 +48,7 @@ struct SearchScreen: View {
     private var playlists: [Playlist] {
         playlistStore.playlists.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) }
     }
-    private var hasResults: Bool { !trackResults.isEmpty || !artists.isEmpty || !releases.isEmpty || !playlists.isEmpty }
+    private var hasResults: Bool { !trackResults.isEmpty || !artists.isEmpty || !releases.isEmpty || !playlists.isEmpty || !externalArtists.isEmpty || !externalReleases.isEmpty }
 
     var body: some View {
         NavigationStack {
@@ -98,13 +101,19 @@ struct SearchScreen: View {
     @ViewBuilder private var results: some View {
         switch category {
         case .all:
+            ExternalEntityResults(title: "search.artists", results: Array(externalArtists.prefix(4)))
             SearchArtistResults(artists: Array(artists.prefix(3)))
             MusicSearchTrackResults(results: Array(trackResults.prefix(8)), onPlay: play)
+            ExternalEntityResults(title: "search.releases", results: Array(externalReleases.prefix(4)))
             SearchReleaseResults(releases: Array(releases.prefix(6)))
             PlaylistResultsList(playlists: Array(playlists.prefix(4)))
         case .tracks: MusicSearchTrackResults(results: trackResults, onPlay: play)
-        case .artists: SearchArtistResults(artists: artists)
-        case .releases: SearchReleaseResults(releases: releases)
+        case .artists:
+            ExternalEntityResults(title: "search.artists", results: externalArtists)
+            SearchArtistResults(artists: artists)
+        case .releases:
+            ExternalEntityResults(title: "search.releases", results: externalReleases)
+            SearchReleaseResults(releases: releases)
         case .playlists:
             if playlists.isEmpty {
                 CatalogEmptyState(title: "search.playlists_empty_title", detail: "search.playlists_empty_detail", icon: "music.note.list")

@@ -4,6 +4,7 @@ struct DownloadManagementScreen: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var manager: CatalogTransferManager
     @EnvironmentObject private var localLibrary: LocalMediaLibrary
+    @EnvironmentObject private var musicSearch: MusicSearchStore
     @State private var confirmsCleanup = false
 
     var body: some View {
@@ -12,6 +13,20 @@ struct DownloadManagementScreen: View {
                 Section("downloads.storage") {
                     LabeledContent("downloads.offline_copies", value: ByteCountFormatter.string(fromByteCount: manager.downloadedBytes, countStyle: .file))
                     if manager.downloadedBytes > 0 { Button("downloads.remove_all", role: .destructive) { confirmsCleanup = true } }
+                }
+                Section("search.server_acquisitions") {
+                    if musicSearch.acquisitionJobs.isEmpty {
+                        Text("search.no_acquisitions").foregroundStyle(.secondary)
+                    } else {
+                        ForEach(musicSearch.acquisitionJobs) { job in
+                            VStack(alignment: .leading, spacing: 7) {
+                                HStack { Text(verbatim: job.title).lineLimit(1); Spacer(); Text(verbatim: job.state).font(.caption).foregroundStyle(.secondary) }
+                                ProgressView(value: job.progress)
+                                if let detail = job.errorDetail { Text(verbatim: detail).font(.caption).foregroundStyle(.red) }
+                                if job.state == "failed" { Button("sync.retry") { Task { await musicSearch.retryAcquisition(job.id) } }.font(.caption) }
+                            }.padding(.vertical, 3)
+                        }
+                    }
                 }
                 if manager.transfers.isEmpty {
                     ContentUnavailableView("downloads.empty", systemImage: "arrow.down.circle")
@@ -41,7 +56,17 @@ struct DownloadManagementScreen: View {
                 ToolbarItem(placement: .topBarLeading) { Button("common.close") { dismiss() } }
                 ToolbarItem(placement: .topBarTrailing) { Button { Task { await manager.synchronize() } } label: { Image(systemName: "arrow.clockwise") } }
             }
-            .task { await manager.reload() }
+            .task {
+                await manager.reload()
+                while !Task.isCancelled {
+                    await musicSearch.reloadAcquisitions()
+                    if musicSearch.acquisitionJobs.contains(where: { $0.state == "completed" }) {
+                        await manager.synchronize()
+                        await localLibrary.load()
+                    }
+                    try? await Task.sleep(for: .seconds(3))
+                }
+            }
             .confirmationDialog("downloads.remove_all_warning", isPresented: $confirmsCleanup, titleVisibility: .visible) {
                 Button("downloads.remove_all", role: .destructive) {
                     Task {

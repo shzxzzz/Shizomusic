@@ -18,15 +18,14 @@ Copy-Item infra/.env.example infra/.env
 docker compose --env-file infra/.env -f infra/docker-compose.yml up --build
 ```
 
-Для поиска SoundCloud зарегистрируйте приложение, заполните `SOUNDCLOUD_CLIENT_ID` и
-`SOUNDCLOUD_CLIENT_SECRET` в `infra/.env`, затем запустите дополнительный Compose overlay:
+Внешний поиск выполняется параллельно через Audius и Piped. `PIPED_INSTANCES` принимает
+список API-инстансов через запятую; при отказе одного сервер переключается на следующий.
+`AUDIUS_API_KEY` необязателен для публичного чтения, но рекомендуется для повышенных лимитов.
+Каждый провайдер изолирован: его отказ не скрывает локальный FTS и результаты остальных источников.
 
-```powershell
-docker compose --env-file infra/.env -f infra/docker-compose.yml -f infra/docker-compose.soundcloud.yml up --build
-```
-
-Если переменные не заданы, SoundCloud adapter не создаётся: локальный FTS и поиск по общему
-каталогу продолжают работать без ошибок.
+Сохранение внешнего результата создаёт фоновое задание. Worker запускает spotDL/yt-dlp только
+с фиксированными аргументами, проверяет файл через FFprobe, дедуплицирует по SHA-256 и внешнему ID,
+а затем добавляет объект в общий каталог. Состояния и ручный retry доступны в экране загрузок iOS.
 
 Кроме health-checks сервер предоставляет приглашения, onboarding, access/refresh tokens, отзыв устройств и общий музыкальный каталог. PostgreSQL-схема и миграции управляются Drizzle. После первого запуска код владельца берётся из `OWNER_INVITE_CODE`.
 

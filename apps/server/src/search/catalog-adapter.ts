@@ -1,9 +1,9 @@
 import type { CatalogStore } from "../catalog/models.js";
-import type { MusicSourceAdapter, MusicSourceSearchResult } from "./models.js";
+import type { ExternalEntityReference, MusicSourceAdapter, MusicSourceSearchResult } from "./models.js";
 
 export class CatalogMusicSourceAdapter implements MusicSourceAdapter {
   readonly id = "catalog";
-  readonly capabilities = new Set(["search", "stream", "download"] as const);
+  readonly capabilities = new Set(["search", "stream", "acquire"] as const);
   constructor(private readonly catalog: CatalogStore) {}
 
   async search(query: string, limit: number): Promise<MusicSourceSearchResult> {
@@ -11,10 +11,13 @@ export class CatalogMusicSourceAdapter implements MusicSourceAdapter {
     const tracks = (await this.catalog.listCatalog()).filter((track) =>
       [track.title, track.artist, track.album, track.albumArtist].some((value) => value?.toLocaleLowerCase().includes(needle))
     ).slice(0, limit);
-    return { provider: this.id, items: tracks.map((track) => ({
-      id: track.id, provider: this.id, title: track.title, artist: track.artist, album: track.album,
-      duration: track.duration, artworkURL: track.artworkPath, webpageURL: null, streamPath: track.streamPath,
-      capabilities: ["search", "stream", "download"], attribution: track.addedBy.displayName,
-    })) };
+    return { provider: this.id, items: tracks.map((track) => {
+      const reference: ExternalEntityReference = { provider: this.id, entityType: "track", externalID: track.id, canonicalURL: null };
+      return { id: `catalog:track:${track.id}`, entityType: "track" as const, title: track.title, artist: track.artist,
+        release: track.album, duration: track.duration, artworkURL: track.artworkPath,
+        metadataSource: { provider: this.id, reference }, audioSource: { provider: this.id, reference, resolverPath: track.streamPath },
+        acquisition: { provider: this.id, reference, method: "direct" as const, allowed: true },
+        attribution: `ShizoMusic · ${track.addedBy.displayName}` };
+    }) };
   }
 }

@@ -36,6 +36,13 @@
       "when": 1787323310522,
       "tag": "0004_lovely_iron_monger",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787414400000,
+      "tag": "0005_external_search_acquisition",
+      "breakpoints": true
     }
   ]
 }

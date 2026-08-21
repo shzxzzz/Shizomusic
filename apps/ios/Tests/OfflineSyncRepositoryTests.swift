@@ -75,7 +75,7 @@ struct OfflineSyncRepositoryTests {
         )
         try await sync.apply(changes: [deferredChange], cursor: 10)
         overview = try await sync.overview()
-        #expect(overview.conflictCount == 1)
+        #expect(overview.conflictCount == 0)
 
         let laterMedia = ScannedMediaFile(
             fileURL: URL(fileURLWithPath: "/tmp/later-track.flac"), contentHash: "later-track-hash",

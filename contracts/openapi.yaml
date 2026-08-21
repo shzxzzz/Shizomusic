@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ShizoMusic API
-  version: 0.3.0
+  version: 0.4.0
   description: Private invitation-only ShizoMusic installation.
   license: { name: Private }
 servers:
@@ -233,19 +233,53 @@ paths:
         '200': { description: Result from the selected provider, content: { application/json: { schema: { $ref: '#/components/schemas/MusicSearchResponse' } } } }
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
-  /search/providers/{provider}/tracks/{trackId}/stream:
+  /external/audio/{provider}/{entityType}/{externalId}:
     get:
-      summary: Resolve a fresh expiring provider URL and redirect the player
-      operationId: streamProviderTrack
+      summary: Resolve fresh provider audio and redirect the player
+      operationId: resolveExternalAudio
       parameters:
         - { in: path, name: provider, required: true, schema: { type: string } }
-        - { in: path, name: trackId, required: true, schema: { type: string } }
+        - { in: path, name: entityType, required: true, schema: { $ref: '#/components/schemas/ExternalEntityType' } }
+        - { in: path, name: externalId, required: true, schema: { type: string } }
       responses:
         '302': { description: Fresh provider stream URL, headers: { Location: { schema: { type: string, format: uri } } } }
         '404': { $ref: '#/components/responses/Error' }
         '429': { $ref: '#/components/responses/Error' }
         '451': { $ref: '#/components/responses/Error' }
         '503': { $ref: '#/components/responses/Error' }
+  /acquisitions:
+    post:
+      summary: Queue a server-side external media acquisition
+      operationId: createAcquisition
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AcquisitionRequest' } } } }
+      responses:
+        '200': { description: Acquisition job, content: { application/json: { schema: { $ref: '#/components/schemas/AcquisitionJob' } } } }
+        '400': { $ref: '#/components/responses/Error' }
+    get:
+      summary: List acquisition jobs for the current user
+      operationId: listAcquisitions
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Jobs, content: { application/json: { schema: { type: object, required: [jobs], properties: { jobs: { type: array, items: { $ref: '#/components/schemas/AcquisitionJob' } } } } } } }
+  /acquisitions/{id}:
+    get:
+      summary: Get one acquisition job
+      operationId: getAcquisition
+      security: [{ bearerAuth: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Job, content: { application/json: { schema: { $ref: '#/components/schemas/AcquisitionJob' } } } }
+        '404': { $ref: '#/components/responses/Error' }
+  /acquisitions/{id}/retry:
+    post:
+      summary: Retry a failed acquisition job
+      operationId: retryAcquisition
+      security: [{ bearerAuth: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Requeued job, content: { application/json: { schema: { $ref: '#/components/schemas/AcquisitionJob' } } } }
+        '409': { $ref: '#/components/responses/Error' }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -424,30 +458,58 @@ components:
         streamPath: { type: string }
         artworkPath: { type: [string, 'null'] }
         createdAt: { type: string, format: date-time }
-    MusicSourceCapability:
+    ExternalEntityType:
       type: string
-      enum: [search, stream, download]
+      enum: [track, artist, release]
+    ExternalEntityReference:
+      type: object
+      required: [provider, entityType, externalID]
+      properties:
+        provider: { type: string }
+        entityType: { $ref: '#/components/schemas/ExternalEntityType' }
+        externalID: { type: string }
+        canonicalURL: { type: [string, 'null'], format: uri }
+    ExternalSource:
+      type: object
+      required: [provider, reference]
+      properties:
+        provider: { type: string }
+        reference: { $ref: '#/components/schemas/ExternalEntityReference' }
+    ExternalAudioSource:
+      allOf:
+        - { $ref: '#/components/schemas/ExternalSource' }
+        - type: object
+          required: [resolverPath]
+          properties: { resolverPath: { type: [string, 'null'] } }
+    ExternalAcquisition:
+      allOf:
+        - { $ref: '#/components/schemas/ExternalSource' }
+        - type: object
+          required: [method, allowed]
+          properties:
+            method: { type: string, enum: [direct, yt_dlp, spotdl, unavailable] }
+            allowed: { type: boolean }
     MusicSearchItem:
       type: object
-      required: [id, provider, title, artist, duration, capabilities]
+      required: [id, entityType, title, duration, metadataSource, acquisition, attribution]
       properties:
         id: { type: string }
-        provider: { type: string }
+        entityType: { $ref: '#/components/schemas/ExternalEntityType' }
         title: { type: string }
-        artist: { type: string }
-        album: { type: [string, 'null'] }
+        artist: { type: [string, 'null'] }
+        release: { type: [string, 'null'] }
         duration: { type: number, minimum: 0 }
         artworkURL: { type: [string, 'null'] }
-        webpageURL: { type: [string, 'null'] }
-        streamPath: { type: [string, 'null'] }
-        capabilities: { type: array, uniqueItems: true, items: { $ref: '#/components/schemas/MusicSourceCapability' } }
-        attribution: { type: [string, 'null'] }
+        metadataSource: { $ref: '#/components/schemas/ExternalSource' }
+        audioSource: { anyOf: [{ $ref: '#/components/schemas/ExternalAudioSource' }, { type: 'null' }] }
+        acquisition: { $ref: '#/components/schemas/ExternalAcquisition' }
+        attribution: { type: string }
     MusicSourceFailure:
       type: object
       required: [provider, kind, message]
       properties:
         provider: { type: string }
-        kind: { type: string, enum: [authentication, rate_limit, geo_restricted, temporary, unavailable] }
+        kind: { type: string, enum: [authentication, rate_limit, geo_restricted, temporary, unavailable, malformed_response] }
         message: { type: string }
         retryAfterSeconds: { type: integer, minimum: 0 }
     MusicSearchResponse:
@@ -456,6 +518,31 @@ components:
       properties:
         results: { type: array, items: { $ref: '#/components/schemas/MusicSearchItem' } }
         failures: { type: array, items: { $ref: '#/components/schemas/MusicSourceFailure' } }
+    AcquisitionRequest:
+      type: object
+      required: [reference, method, title]
+      properties:
+        reference: { $ref: '#/components/schemas/ExternalEntityReference' }
+        method: { type: string, enum: [direct, yt_dlp, spotdl] }
+        title: { type: string }
+        artist: { type: [string, 'null'] }
+        artworkURL: { type: [string, 'null'], format: uri }
+    AcquisitionJob:
+      allOf:
+        - { $ref: '#/components/schemas/AcquisitionRequest' }
+        - type: object
+          required: [id, state, progress, attemptCount, maxAttempts, createdAt, updatedAt]
+          properties:
+            id: { type: string, format: uuid }
+            state: { type: string, enum: [queued, running, postProcessing, completed, failed] }
+            progress: { type: number, minimum: 0, maximum: 1 }
+            attemptCount: { type: integer }
+            maxAttempts: { type: integer }
+            errorCode: { type: [string, 'null'] }
+            errorDetail: { type: [string, 'null'] }
+            catalogFileID: { type: [string, 'null'], format: uuid }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
     Error:
       type: object
       required: [code, messageKey, requestID]

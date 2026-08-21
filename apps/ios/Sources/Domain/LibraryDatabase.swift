@@ -304,6 +304,25 @@ final class LibraryDatabase: @unchecked Sendable {
                 CREATE INDEX providerSearchResult_query_updated ON providerSearchResult(query, updatedAt);
                 """)
         }
+        migrator.registerMigration("v8.external-search-model") { db in
+            try db.execute(sql: """
+                CREATE TABLE providerSearchResult_v8 (
+                    provider TEXT NOT NULL, externalID TEXT NOT NULL, entityType TEXT NOT NULL,
+                    title TEXT NOT NULL, artist TEXT, album TEXT, duration DOUBLE NOT NULL,
+                    artworkURL TEXT, webpageURL TEXT, streamURL TEXT, capabilities TEXT NOT NULL,
+                    attribution TEXT, query TEXT NOT NULL, updatedAt DATETIME NOT NULL,
+                    canonicalURL TEXT, metadataProvider TEXT NOT NULL, audioProvider TEXT,
+                    acquisitionMethod TEXT NOT NULL,
+                    PRIMARY KEY(provider, entityType, externalID)
+                );
+                INSERT INTO providerSearchResult_v8(provider,externalID,entityType,title,artist,album,duration,artworkURL,webpageURL,streamURL,capabilities,attribution,query,updatedAt,canonicalURL,metadataProvider,audioProvider,acquisitionMethod)
+                SELECT provider,externalID,'track',title,artist,album,duration,artworkURL,webpageURL,streamURL,capabilities,attribution,query,updatedAt,webpageURL,provider,provider,'unavailable'
+                FROM providerSearchResult;
+                DROP TABLE providerSearchResult;
+                ALTER TABLE providerSearchResult_v8 RENAME TO providerSearchResult;
+                CREATE INDEX providerSearchResult_query_updated ON providerSearchResult(query, updatedAt);
+                """)
+        }
         return migrator
     }
 }

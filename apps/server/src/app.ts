@@ -12,6 +12,9 @@ import type { CatalogStore } from "./catalog/models.js";
 import { CatalogMusicSourceAdapter } from "./search/catalog-adapter.js";
 import { registerSearchRoutes } from "./search/routes.js";
 import { MemoryMusicSearchCache, MusicSearchService } from "./search/service.js";
+import type { AcquisitionStore } from "./acquisition/models.js";
+import { MemoryAcquisitionStore } from "./acquisition/memory-store.js";
+import { registerAcquisitionRoutes } from "./acquisition/routes.js";
 
 interface BuildAppOptions {
   authStore?: AuthStore;
@@ -20,6 +23,7 @@ interface BuildAppOptions {
   syncStore?: SyncStore;
   catalogStore?: CatalogStore;
   searchService?: MusicSearchService;
+  acquisitionStore?: AcquisitionStore;
 }
 
 function requiredString(value: unknown, field: string): string {
@@ -39,6 +43,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     [new CatalogMusicSourceAdapter(catalogStore)],
     new MemoryMusicSearchCache(),
   );
+  const acquisitionStore = options.acquisitionStore ?? new MemoryAcquisitionStore();
 
   app.register(cors, { origin: false });
   app.addContentTypeParser("application/octet-stream", { parseAs: "buffer" }, (_request, body, done) => done(null, body));
@@ -157,6 +162,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   registerCatalogRoutes(app, catalogStore, principal);
   registerSearchRoutes(app, searchService, principal);
+  registerAcquisitionRoutes(app, acquisitionStore, principal);
 
   return app;
 }

@@ -6,22 +6,26 @@ import { DatabaseCatalogStore } from "./catalog/database-store.js";
 import { CatalogMusicSourceAdapter } from "./search/catalog-adapter.js";
 import { DatabaseMusicSearchCache } from "./search/database-cache.js";
 import { MusicSearchService } from "./search/service.js";
-import { SoundCloudMusicSourceAdapter } from "./search/soundcloud-adapter.js";
+import { AudiusMusicSourceAdapter } from "./search/audius-adapter.js";
+import { PipedMusicSourceAdapter } from "./search/piped-adapter.js";
 import type { MusicSourceAdapter } from "./search/models.js";
+import { DatabaseAcquisitionStore } from "./acquisition/database-store.js";
 
 const databaseURL = process.env.DATABASE_URL;
 if (!databaseURL) throw new Error("DATABASE_URL is required");
 const { db, pool } = createDatabase(databaseURL);
 const catalogStore = new DatabaseCatalogStore(db, process.env.MEDIA_STORAGE_ROOT ?? "/data");
 const searchAdapters: MusicSourceAdapter[] = [new CatalogMusicSourceAdapter(catalogStore)];
-if (process.env.SOUNDCLOUD_CLIENT_ID && process.env.SOUNDCLOUD_CLIENT_SECRET) {
-  searchAdapters.push(new SoundCloudMusicSourceAdapter(process.env.SOUNDCLOUD_CLIENT_ID, process.env.SOUNDCLOUD_CLIENT_SECRET));
-}
+searchAdapters.push(new AudiusMusicSourceAdapter(process.env.AUDIUS_API_URL, process.env.AUDIUS_API_KEY));
+const pipedInstances = (process.env.PIPED_INSTANCES ?? "https://pipedapi.kavin.rocks,https://pipedapi.leptons.xyz,https://pipedapi.adminforge.de")
+  .split(",").map((value) => value.trim()).filter(Boolean);
+searchAdapters.push(new PipedMusicSourceAdapter(pipedInstances));
 const app = buildApp({
   authStore: new DatabaseAuthStore(db),
   syncStore: new DatabaseSyncStore(db),
   catalogStore,
   searchService: new MusicSearchService(searchAdapters, new DatabaseMusicSearchCache(db)),
+  acquisitionStore: new DatabaseAcquisitionStore(db),
   readiness: async () => { await pool.query("select 1"); },
 });
 

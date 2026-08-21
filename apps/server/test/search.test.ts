@@ -1,71 +1,78 @@
 import { describe, expect, test } from "vitest";
-import type { MusicSearchCache, MusicSourceAdapter, MusicSourceSearchResult } from "../src/search/models.js";
+import { AudiusMusicSourceAdapter } from "../src/search/audius-adapter.js";
+import { PipedMusicSourceAdapter } from "../src/search/piped-adapter.js";
+import type { MusicSearchCache, MusicSourceAdapter, MusicSourceSearchResult, NormalizedMusicResult } from "../src/search/models.js";
 import { MusicProviderError } from "../src/search/models.js";
-import { MusicSearchService } from "../src/search/service.js";
-import { SoundCloudMusicSourceAdapter } from "../src/search/soundcloud-adapter.js";
+import { MemoryMusicSearchCache, MusicSearchService } from "../src/search/service.js";
 
 class RecordingCache implements MusicSearchCache {
   saved: string[] = [];
   async save(_query: string, result: MusicSourceSearchResult): Promise<void> { this.saved.push(result.provider); }
 }
-
-function adapter(id: string, operation: () => Promise<MusicSourceSearchResult>): MusicSourceAdapter {
-  return { id, capabilities: new Set(["search"]), search: operation };
+function adapter(id: string, operation: () => Promise<MusicSourceSearchResult>): MusicSourceAdapter { return { id, capabilities: new Set(["search"]), search: operation }; }
+function item(provider: string): NormalizedMusicResult {
+  const reference = { provider, entityType: "track" as const, externalID: "1", canonicalURL: null };
+  return { id: `${provider}:track:1`, entityType: "track", title: provider, artist: "Artist", release: null, duration: 10, artworkURL: null,
+    metadataSource: { provider, reference }, audioSource: null, acquisition: { provider, reference, method: "unavailable", allowed: false }, attribution: provider };
 }
 
-describe("music source search", () => {
-  test("keeps successful catalog results when SoundCloud fails and persists before returning", async () => {
+describe("two-layer music search", () => {
+  test("one provider failure does not hide successful results", async () => {
     const cache = new RecordingCache();
-    const catalog = adapter("catalog", async () => ({ provider: "catalog", items: [{
-      id: "local-1", provider: "catalog", title: "Local result", artist: "Artist", album: null,
-      duration: 10, artworkURL: null, webpageURL: null, streamPath: "/catalog/files/hash",
-      capabilities: ["search", "stream", "download"], attribution: "Owner",
-    }] }));
-    const soundcloud = adapter("soundcloud", async () => {
-      throw new MusicProviderError("soundcloud", "rate_limit", "soundcloud.http_429", 20);
-    });
-    const result = await new MusicSearchService([catalog, soundcloud], cache).search("test");
-    expect(result.results.map((item) => item.title)).toEqual(["Local result"]);
-    expect(result.failures).toEqual([{ provider: "soundcloud", kind: "rate_limit", message: "soundcloud.http_429", retryAfterSeconds: 20 }]);
-    expect(cache.saved).toEqual(["catalog"]);
+    const audius = adapter("audius", async () => ({ provider: "audius", items: [item("audius")] }));
+    const piped = adapter("piped", async () => { throw new MusicProviderError("piped", "temporary", "piped.offline"); });
+    const result = await new MusicSearchService([audius, piped], cache).search("test");
+    expect(result.results.map((value) => value.title)).toEqual(["audius"]);
+    expect(result.failures[0]).toMatchObject({ provider: "piped", kind: "temporary" });
+    expect(cache.saved).toEqual(["audius"]);
   });
 
-  test("retries only the requested provider", async () => {
+  test("retry invokes only the requested provider", async () => {
     const calls: string[] = [];
-    const service = new MusicSearchService([
-      adapter("catalog", async () => { calls.push("catalog"); return { provider: "catalog", items: [] }; }),
-      adapter("soundcloud", async () => { calls.push("soundcloud"); return { provider: "soundcloud", items: [] }; }),
-    ], new RecordingCache());
-    await service.search("test", 10, "soundcloud");
-    expect(calls).toEqual(["soundcloud"]);
+    const service = new MusicSearchService([adapter("audius", async () => { calls.push("audius"); return { provider: "audius", items: [] }; }),
+      adapter("piped", async () => { calls.push("piped"); return { provider: "piped", items: [] }; })], new RecordingCache());
+    await service.search("test", 10, "piped"); expect(calls).toEqual(["piped"]);
   });
 
-  test("SoundCloud uses OAuth, refreshes after 401, normalizes branding and resolves a fresh stream", async () => {
-    const calls: Array<{ url: string; authorization?: string }> = [];
-    let tokenNumber = 0;
-    let searchNumber = 0;
-    const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+  test("returns a cached provider result together with a fresh failure", async () => {
+    let online = true; const cache = new MemoryMusicSearchCache();
+    const source = adapter("audius", async () => {
+      if (!online) throw new MusicProviderError("audius", "temporary", "offline");
+      return { provider: "audius", items: [item("audius")] };
+    });
+    const service = new MusicSearchService([source], cache); await service.search("cached"); online = false;
+    const result = await service.search("cached");
+    expect(result.results).toHaveLength(1); expect(result.failures).toHaveLength(1);
+  });
+
+  test("Audius normalizes three entity types and diagnoses malformed responses", async () => {
+    const fetcher = (async (input: string | URL | Request) => {
       const url = String(input);
-      const authorization = new Headers(init?.headers).get("authorization") ?? undefined;
-      calls.push({ url, ...(authorization ? { authorization } : {}) });
-      if (url.includes("/oauth/token")) {
-        tokenNumber += 1;
-        return Response.json({ access_token: `token-${tokenNumber}`, refresh_token: `refresh-${tokenNumber}`, expires_in: 3600 });
-      }
-      if (url.includes("/tracks?") && searchNumber++ === 0) return Response.json({}, { status: 401 });
-      if (url.includes("/tracks?")) return Response.json({ collection: [{
-        id: 42, title: "Cloud song", duration: 125_000, access: "playable", downloadable: true,
-        download_url: "https://api.soundcloud.com/tracks/42/download", artwork_url: "https://i1.sndcdn.com/art.jpg",
-        permalink_url: "https://soundcloud.com/artist/cloud-song", user: { username: "Artist" },
-      }] });
-      if (url.includes("/tracks/42/streams")) return Response.json({ hls_aac_160_url: "https://cf-media.sndcdn.com/fresh.m3u8" });
-      return Response.json({}, { status: 404 });
+      if (url.includes("tracks/search")) return Response.json({ data: [{ id: "t1", title: "Track", duration: 42, user: { name: "Artist" }, isStreamable: true, artwork: { _480x480: "https://art.test/track.jpg" } }] });
+      if (url.includes("users/search")) return Response.json({ data: [{ id: "u1", name: "Artist" }] });
+      return Response.json({ data: [{ id: "p1", playlistName: "Release", user: { name: "Artist" } }] });
     }) as typeof fetch;
-    const soundcloud = new SoundCloudMusicSourceAdapter("client", "secret", fetcher);
-    const result = await soundcloud.search("cloud", 10);
-    expect(result.items[0]?.capabilities).toEqual(["search", "stream"]);
-    expect(result.items[0]?.attribution).toContain("SoundCloud");
-    expect(await soundcloud.resolveStream("42")).toBe("https://cf-media.sndcdn.com/fresh.m3u8");
-    expect(calls.some((call) => call.authorization === "OAuth token-2")).toBe(true);
+    const result = await new AudiusMusicSourceAdapter("https://audius.test/v1", undefined, fetcher).search("x", 10);
+    expect(result.items.map((value) => value.entityType)).toEqual(["track", "artist", "release"]);
+    expect(result.items[0]?.artworkURL).toBe("https://art.test/track.jpg");
+    expect(result.items[0]?.audioSource?.resolverPath).toContain("/external/audio/audius/track/t1");
+    const malformed = new AudiusMusicSourceAdapter("https://audius.test/v1", undefined, (async () => Response.json({ nope: [] })) as typeof fetch);
+    await expect(malformed.search("x", 10)).rejects.toMatchObject({ kind: "malformed_response" });
+  });
+
+  test("Piped falls back and resolves fresh audio without persisting it", async () => {
+    const calls: string[] = [];
+    const fetcher = (async (input: string | URL | Request) => {
+      const url = String(input); calls.push(url);
+      if (url.startsWith("https://bad")) throw new Error("offline");
+      if (url.includes("/search")) return Response.json({ items: [{ url: "/watch?v=abc123XYZ", title: "Video", uploaderName: "Creator", duration: 90 }] });
+      return Response.json({ audioStreams: [{ url: "https://temporary.cdn/audio", bitrate: 128000 }] });
+    }) as typeof fetch;
+    const piped = new PipedMusicSourceAdapter(["https://bad", "https://good"], fetcher);
+    const result = await piped.search("x", 10); const track = result.items[0]!;
+    expect(track.metadataSource.reference.externalID).toBe("abc123XYZ");
+    expect(JSON.stringify(track)).not.toContain("temporary.cdn");
+    expect(await piped.resolveAudio(track.metadataSource.reference)).toBe("https://temporary.cdn/audio");
+    expect(calls.some((url) => url.startsWith("https://good"))).toBe(true);
   });
 });

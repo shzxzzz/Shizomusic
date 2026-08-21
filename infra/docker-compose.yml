@@ -9,11 +9,19 @@ services:
       AUTH_SECRET: ${AUTH_SECRET}
       OWNER_INVITE_CODE: ${OWNER_INVITE_CODE}
       MEDIA_STORAGE_ROOT: /data
+      AUDIUS_API_URL: ${AUDIUS_API_URL:-https://api.audius.co/v1}
+      AUDIUS_API_KEY: ${AUDIUS_API_KEY:-}
+      PIPED_INSTANCES: ${PIPED_INSTANCES:-https://pipedapi.kavin.rocks,https://pipedapi.leptons.xyz,https://pipedapi.adminforge.de}
     ports: ["3000:3000"]
     volumes: [media-data:/data]
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
   worker:
     build:
       context: ../apps/server
@@ -21,9 +29,13 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       MEDIA_STORAGE_ROOT: /data
+      AUDIUS_API_URL: ${AUDIUS_API_URL:-https://api.audius.co/v1}
+      AUDIUS_API_KEY: ${AUDIUS_API_KEY:-}
+      ACQUISITION_MAX_BYTES: ${ACQUISITION_MAX_BYTES:-536870912}
+      ACQUISITION_TIMEOUT_MS: ${ACQUISITION_TIMEOUT_MS:-1200000}
     volumes: [media-data:/data]
     depends_on:
-      postgres:
+      api:
         condition: service_healthy
   postgres:
     image: postgres:17-alpine

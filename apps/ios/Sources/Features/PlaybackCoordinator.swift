@@ -621,16 +621,9 @@ final class PlaybackCoordinator: ObservableObject {
             Task { @MainActor in self?.previous() }
             return .success
         }
-        center.skipForwardCommand.preferredIntervals = [15]
-        center.skipBackwardCommand.preferredIntervals = [15]
-        center.skipForwardCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.skip(by: 15) }
-            return .success
-        }
-        center.skipBackwardCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.skip(by: -15) }
-            return .success
-        }
+        // Lock Screen / Control Center should expose queue navigation, not podcast-style ±15 s controls.
+        center.skipForwardCommand.isEnabled = false
+        center.skipBackwardCommand.isEnabled = false
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             let positionTime = event.positionTime
@@ -712,6 +705,8 @@ final class PlaybackCoordinator: ObservableObject {
         center.togglePlayPauseCommand.isEnabled = currentTrack.fileURL != nil
         center.nextTrackCommand.isEnabled = !upcomingTracks.isEmpty || repeatMode == .all
         center.previousTrackCommand.isEnabled = currentTrack.fileURL != nil
+        center.skipForwardCommand.isEnabled = false
+        center.skipBackwardCommand.isEnabled = false
         center.changePlaybackPositionCommand.isEnabled = currentTrack.durationSeconds > 0
         center.changeRepeatModeCommand.currentRepeatType = switch repeatMode {
         case .off: .off

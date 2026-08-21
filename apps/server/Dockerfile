@@ -1,5 +1,5 @@
 FROM node:24-alpine
-RUN apk add --no-cache ffmpeg
+RUN apk add --no-cache ffmpeg python3 py3-pip yt-dlp && pip install --break-system-packages --no-cache-dir spotdl
 WORKDIR /app
 COPY package.json ./
 RUN npm install

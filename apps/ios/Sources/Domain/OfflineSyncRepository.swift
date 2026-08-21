@@ -190,11 +190,16 @@ actor GRDBOfflineSyncRepository: OfflineSyncRepository {
                             )
                             try db.execute(sql: "UPDATE playlist SET syncStatus = 'synced', lastSyncedCursor = ? WHERE id = ?", arguments: [cursor, payload.playlistId.uuidString])
                         } else {
-                            try Self.insertConflict(
-                                db, id: UUID(), operationID: change.id, entityType: .playlistItem,
-                                entityID: payload.id.uuidString, reason: hasPlaylist ? "missing_local_track" : "missing_local_playlist",
-                                localPayload: "{}", serverPayload: change.payload, createdAt: change.clientTimestamp
-                            )
+                            // A catalog track may arrive shortly after its playlist item. That is
+                            // expected eventual consistency, not a user-visible playlist conflict.
+                            // Keep a real conflict only when the parent playlist is unavailable.
+                            if !hasPlaylist {
+                                try Self.insertConflict(
+                                    db, id: UUID(), operationID: change.id, entityType: .playlistItem,
+                                    entityID: payload.id.uuidString, reason: "missing_local_playlist",
+                                    localPayload: "{}", serverPayload: change.payload, createdAt: change.clientTimestamp
+                                )
+                            }
                             try db.execute(
                                 sql: """
                                     INSERT OR REPLACE INTO syncDeferredChange(

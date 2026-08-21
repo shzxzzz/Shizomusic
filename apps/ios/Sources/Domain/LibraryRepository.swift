@@ -283,11 +283,11 @@ final class GRDBTrackRepository: TrackRepository, @unchecked Sendable {
             predicates.append("t.id IN (\(matchingTrackIDs.map { _ in "?" }.joined(separator: ",")))")
             arguments += StatementArguments(matchingTrackIDs)
         }
-        // LibrarySnapshot backs the Offline UI. Remote catalog rows must never make
-        // a logical track appear here until the file exists in Documents/Music.
         switch filter {
         case .all:
-            predicates.append("EXISTS (SELECT 1 FROM trackSource sx WHERE sx.trackID = t.id AND sx.sourceKind IN ('local','downloaded'))")
+            // Used by playlists and queue restoration: include logical tracks with
+            // remote sources so another device can stream or download them.
+            break
         case .available:
             predicates.append("EXISTS (SELECT 1 FROM trackSource sx WHERE sx.trackID = t.id AND sx.sourceKind IN ('local','downloaded') AND sx.state = 'available')")
         case .missing:

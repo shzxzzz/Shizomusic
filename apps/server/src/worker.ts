@@ -5,6 +5,8 @@ import { mkdir, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { catalogFiles, mediaJobs } from "./db/schema.js";
 import { createDatabase } from "./db/client.js";
+import { acquisitionJobs } from "./db/schema.js";
+import { processNextAcquisition } from "./acquisition/worker.js";
 
 const databaseURL = process.env.DATABASE_URL;
 if (!databaseURL) throw new Error("DATABASE_URL is required");
@@ -15,6 +17,7 @@ process.on("SIGTERM", () => { stopping = true; });
 process.on("SIGINT", () => { stopping = true; });
 
 while (!stopping) {
+  if (await processNextAcquisition(db, storageRoot)) continue;
   const [job] = await db.select().from(mediaJobs).where(and(eq(mediaJobs.state, "pending"), lte(mediaJobs.nextAttemptAt, new Date())))
     .orderBy(asc(mediaJobs.createdAt)).limit(1);
   if (!job) { await delay(2_000); continue; }
@@ -40,6 +43,8 @@ while (!stopping) {
         probeError: null, updatedAt: new Date(),
       }).where(eq(catalogFiles.id, file.id));
       await tx.update(mediaJobs).set({ state: "complete", updatedAt: new Date(), lastError: null }).where(eq(mediaJobs.id, job.id));
+      await tx.update(acquisitionJobs).set({ state: "completed", progress: 1, completedAt: new Date(), updatedAt: new Date(), errorCode: null, errorDetail: null })
+        .where(and(eq(acquisitionJobs.catalogFileId, file.id), eq(acquisitionJobs.state, "postProcessing")));
     });
   } catch (error) {
     const attempt = job.attemptCount + 1;
@@ -50,6 +55,8 @@ while (!stopping) {
         nextAttemptAt: new Date(Date.now() + Math.min(300, 2 ** attempt) * 1_000), lastError: message, updatedAt: new Date() })
         .where(eq(mediaJobs.id, job.id));
       if (terminal) await tx.update(catalogFiles).set({ status: "failed", probeError: message, updatedAt: new Date() }).where(eq(catalogFiles.id, job.catalogFileId));
+      if (terminal) await tx.update(acquisitionJobs).set({ state: "failed", errorCode: "post_processing_failed", errorDetail: message, updatedAt: new Date() })
+        .where(and(eq(acquisitionJobs.catalogFileId, job.catalogFileId), eq(acquisitionJobs.state, "postProcessing")));
     });
   }
 }

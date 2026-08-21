@@ -76,15 +76,15 @@ struct LibraryView: View {
             await localLibrary.scan()
             await playlistStore.load()
             playback.replaceLibrary(localLibrary.tracks)
-            await synchronize()
             await catalogTransfers.synchronize()
+            await synchronize()
             await localLibrary.load()
         }
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(15))
-                await synchronize()
                 await catalogTransfers.synchronize()
+                await synchronize()
                 await localLibrary.load()
             }
         }
@@ -96,7 +96,10 @@ struct LibraryView: View {
             Task { await synchronize() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .catalogLibraryDidChange)) { _ in
-            Task { await localLibrary.load() }
+            Task {
+                await synchronize()
+                await localLibrary.load()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .musicFolderDidChange)) { _ in
             // Only a physical Music directory change is allowed to alter Offline.
@@ -106,8 +109,8 @@ struct LibraryView: View {
             guard scenePhase == .active else { return }
             Task {
                 await localLibrary.scan()
-                await synchronize()
                 await catalogTransfers.synchronize()
+                await synchronize()
                 await localLibrary.load()
             }
         }

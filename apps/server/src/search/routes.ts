@@ -30,10 +30,10 @@ export function registerSearchRoutes(
 
   // Like catalog streaming, this route is intentionally usable by AVPlayer without
   // custom bearer headers. It only resolves an opaque public-provider identifier.
-  app.get("/search/providers/:provider/tracks/:trackId/stream", async (request, reply) => {
-    const params = request.params as { provider: string; trackId: string };
+  app.get("/external/audio/:provider/:entityType/:externalId", async (request, reply) => {
+    const params = request.params as { provider: string; entityType: "track" | "artist" | "release"; externalId: string };
     try {
-      return reply.redirect(await service.resolveStream(params.provider, params.trackId));
+      return reply.redirect(await service.resolveAudio(params.provider, params.entityType, params.externalId));
     } catch (error) {
       if (error instanceof MusicProviderError) {
         const status = error.kind === "authentication" ? 502 : error.kind === "rate_limit" ? 429

@@ -119,17 +119,21 @@ struct APIUploadSession: Codable, Sendable {
 struct APIUploadCompletion: Codable, Sendable { let fileId: UUID; let contentHash: String; let status: String }
 
 struct APIMusicSearchItem: Codable, Sendable {
+    struct Reference: Codable, Sendable { let provider: String; let entityType: String; let externalID: String; let canonicalURL: String? }
+    struct Source: Codable, Sendable { let provider: String; let reference: Reference }
+    struct AudioSource: Codable, Sendable { let provider: String; let reference: Reference; let resolverPath: String? }
+    struct Acquisition: Codable, Sendable { let provider: String; let reference: Reference; let method: String; let allowed: Bool }
     let id: String
-    let provider: String
+    let entityType: String
     let title: String
-    let artist: String
-    let album: String?
+    let artist: String?
+    let release: String?
     let duration: Double
     let artworkURL: String?
-    let webpageURL: String?
-    let streamPath: String?
-    let capabilities: [String]
-    let attribution: String?
+    let metadataSource: Source
+    let audioSource: AudioSource?
+    let acquisition: Acquisition
+    let attribution: String
 }
 
 struct APIMusicSourceFailure: Codable, Sendable {
@@ -142,6 +146,24 @@ struct APIMusicSourceFailure: Codable, Sendable {
 struct APIMusicSearchResponse: Codable, Sendable {
     let results: [APIMusicSearchItem]
     let failures: [APIMusicSourceFailure]
+}
+
+struct APIAcquisitionJob: Codable, Identifiable, Sendable {
+    let id: UUID
+    let reference: APIMusicSearchItem.Reference
+    let method: String
+    let title: String
+    let artist: String?
+    let artworkURL: String?
+    let state: String
+    let progress: Double
+    let attemptCount: Int
+    let maxAttempts: Int
+    let errorCode: String?
+    let errorDetail: String?
+    let catalogFileID: UUID?
+    let createdAt: String
+    let updatedAt: String
 }
 
 struct GeneratedAPIClient: Sendable {
@@ -221,6 +243,22 @@ struct GeneratedAPIClient: Sendable {
 
     func retryMusicProvider(provider: String, query: String, accessToken: String) async throws -> APIMusicSearchResponse {
         try await post(path: "search/providers/\(provider)/retry", body: SearchRetryBody(query: query, limit: 30), accessToken: accessToken)
+    }
+
+    func createAcquisition(result: MusicSearchResult, accessToken: String) async throws -> APIAcquisitionJob {
+        let reference = APIMusicSearchItem.Reference(provider: result.reference.provider, entityType: result.reference.entityType.rawValue,
+                                                     externalID: result.reference.externalID, canonicalURL: result.reference.canonicalURL?.absoluteString)
+        return try await post(path: "acquisitions", body: AcquisitionBody(reference: reference, method: result.acquisitionMethod.rawValue,
+                              title: result.title, artist: result.artist, artworkURL: result.artworkURL?.absoluteString), accessToken: accessToken)
+    }
+
+    func acquisitions(accessToken: String) async throws -> [APIAcquisitionJob] {
+        let response: AcquisitionListResponse = try await get(path: "acquisitions", accessToken: accessToken)
+        return response.jobs
+    }
+
+    func retryAcquisition(id: UUID, accessToken: String) async throws -> APIAcquisitionJob {
+        try await post(path: "acquisitions/\(id.uuidString)/retry", body: EmptyBody(), accessToken: accessToken)
     }
 
     func createUpload(filename: String, mimeType: String, byteSize: Int64, sha256: String, accessToken: String) async throws -> APIUploadSession {
@@ -312,6 +350,8 @@ struct GeneratedAPIClient: Sendable {
     private struct SyncPushBody: Encodable { let operations: [APISyncOperation] }
     private struct UploadBody: Encodable { let filename: String; let mimeType: String; let byteSize: String; let sha256: String; let partSize: Int }
     private struct SearchRetryBody: Encodable { let query: String; let limit: Int }
+    private struct AcquisitionBody: Encodable { let reference: APIMusicSearchItem.Reference; let method: String; let title: String; let artist: String?; let artworkURL: String? }
+    private struct AcquisitionListResponse: Decodable { let jobs: [APIAcquisitionJob] }
     private struct CatalogResponse: Decodable { let tracks: [APICatalogTrack] }
     private struct EmptyBody: Encodable {}
 }
