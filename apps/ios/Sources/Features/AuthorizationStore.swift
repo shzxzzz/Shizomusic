@@ -43,6 +43,56 @@ final class AuthorizationStore: ObservableObject {
         return session.user
     }
 
+    var serverURLString: String { client.baseURL.absoluteString }
+
+    @discardableResult
+    func updateServerURL(_ value: String) async -> Bool {
+        guard let url = Self.normalizedServerURL(value) else {
+            errorMessage = String(localized: "auth.server_invalid")
+            return false
+        }
+
+        errorMessage = nil
+        isWorking = true
+        defer { isWorking = false }
+        let candidate = GeneratedAPIClient(baseURL: url)
+
+        switch phase {
+        case let .authenticated(current):
+            do {
+                // Verify the existing session at the new endpoint before replacing
+                // the working client. Refresh only when the access token is expiring.
+                var session = current
+                if Self.isExpiringSoon(current.accessExpiresAt) {
+                    session = try await candidate.refresh(refreshToken: current.refreshToken)
+                    try save(session)
+                } else {
+                    _ = try await candidate.currentUser(accessToken: current.accessToken)
+                }
+                client = candidate
+                defaults.set(url.absoluteString, forKey: "auth.serverURL")
+                phase = .authenticated(session)
+                return true
+            } catch let error as APIErrorResponse {
+                errorMessage = String(localized: String.LocalizationValue(error.messageKey))
+                return false
+            } catch {
+                errorMessage = error.localizedDescription
+                return false
+            }
+        case .localOnly:
+            client = candidate
+            defaults.set(url.absoluteString, forKey: "auth.serverURL")
+            defaults.set(false, forKey: "auth.localOnly")
+            phase = .unauthenticated
+            return true
+        default:
+            client = candidate
+            defaults.set(url.absoluteString, forKey: "auth.serverURL")
+            return true
+        }
+    }
+
     func restore() async {
         guard case .loading = phase else { return }
         if defaults.bool(forKey: "auth.localOnly") {

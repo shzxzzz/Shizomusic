@@ -40,6 +40,7 @@ final class CatalogTransferManager: NSObject, ObservableObject {
             if let credentials = try await authorization.syncCredentials() {
                 let catalog = try await credentials.client.catalog(accessToken: credentials.accessToken)
                 try await repository.merge(catalog, baseURL: credentials.client.baseURL)
+                NotificationCenter.default.post(name: .catalogLibraryDidChange, object: nil)
                 await startNextUpload(credentials: credentials)
             }
             await reload()

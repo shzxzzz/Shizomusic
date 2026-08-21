@@ -9,8 +9,10 @@ struct LibraryView: View {
     @StateObject private var statisticsStore = StatisticsStore()
     @StateObject private var syncEngine: SyncEngine
     @StateObject private var catalogTransfers: CatalogTransferManager
+    private let authorization: AuthorizationStore
 
     init(authorization: AuthorizationStore) {
+        self.authorization = authorization
         _syncEngine = StateObject(wrappedValue: SyncEngine(authorization: authorization))
         _catalogTransfers = StateObject(wrappedValue: CatalogTransferManager(authorization: authorization))
     }
@@ -65,7 +67,7 @@ struct LibraryView: View {
         .environmentObject(statisticsStore)
         .environmentObject(catalogTransfers)
         .safeAreaInset(edge: .top, spacing: 0) {
-            SyncStatusBanner(sync: syncEngine)
+            SyncStatusBanner(sync: syncEngine, authorization: authorization, catalogTransfers: catalogTransfers)
         }
         .task {
             await localLibrary.scan()
@@ -120,20 +122,30 @@ struct LibraryView: View {
 
 private struct SyncStatusBanner: View {
     @ObservedObject var sync: SyncEngine
+    @ObservedObject var authorization: AuthorizationStore
+    @ObservedObject var catalogTransfers: CatalogTransferManager
     @State private var showsDiagnostics = false
+    @State private var showsServerEditor = false
 
     var body: some View {
         if let content {
             HStack(spacing: 8) {
-                Button { showsDiagnostics = true } label: {
+                Button {
+                    if case .local = sync.state { showsServerEditor = true }
+                    else { showsDiagnostics = true }
+                } label: {
                     HStack(spacing: 8) {
-                    Image(systemName: content.icon)
-                    Text(content.title).font(.caption.weight(.semibold)).lineLimit(1)
+                        Image(systemName: content.icon)
+                        Text(content.title).font(.caption.weight(.semibold)).lineLimit(1)
+                        Spacer(minLength: 8)
+                        if case .local = sync.state {
+                            Image(systemName: "chevron.right").font(.caption2.weight(.bold))
+                        }
                     }
                     .foregroundStyle(content.color)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                Spacer(minLength: 8)
                 if case .failed = sync.state {
                     Button("sync.retry") { Task { await sync.retry() } }
                         .font(.caption.bold()).buttonStyle(.borderless)
@@ -142,6 +154,9 @@ private struct SyncStatusBanner: View {
             .padding(.horizontal, 14).padding(.vertical, 8)
             .background(.ultraThinMaterial)
             .sheet(isPresented: $showsDiagnostics) { SyncDiagnosticsScreen(sync: sync) }
+            .sheet(isPresented: $showsServerEditor) {
+                ServerConnectionSheet(sync: sync, authorization: authorization, catalogTransfers: catalogTransfers)
+            }
         }
     }
 
@@ -152,6 +167,80 @@ private struct SyncStatusBanner: View {
         case .syncing: ("arrow.triangle.2.circlepath", "sync.syncing", .cyan)
         case .failed: ("exclamationmark.icloud.fill", "sync.failed", .orange)
         case .synced: nil
+        }
+    }
+}
+
+private struct ServerConnectionSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var sync: SyncEngine
+    @ObservedObject var authorization: AuthorizationStore
+    @ObservedObject var catalogTransfers: CatalogTransferManager
+    @State private var serverURL = ""
+    @FocusState private var isAddressFocused: Bool
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("auth.server_url", text: $serverURL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                        .textContentType(.URL)
+                        .focused($isAddressFocused)
+                        .submitLabel(.go)
+                        .onSubmit { connect() }
+                } footer: {
+                    Text("auth.server_editor_detail")
+                }
+
+                if let error = authorization.errorMessage {
+                    Section {
+                        Label {
+                            Text(verbatim: error)
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                        }
+                        .foregroundStyle(.orange)
+                    }
+                }
+
+                Section {
+                    Button(action: connect) {
+                        HStack {
+                            Spacer()
+                            if authorization.isWorking { ProgressView().padding(.trailing, 6) }
+                            Text("auth.connect_server").fontWeight(.semibold)
+                            Spacer()
+                        }
+                    }
+                    .disabled(serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || authorization.isWorking)
+                }
+            }
+            .navigationTitle("auth.server_editor_title")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("common.cancel") { dismiss() }
+                }
+            }
+            .onAppear {
+                serverURL = authorization.serverURLString
+                isAddressFocused = true
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
+    private func connect() {
+        guard !authorization.isWorking else { return }
+        let value = serverURL
+        Task {
+            guard await authorization.updateServerURL(value) else { return }
+            dismiss()
+            await sync.retry()
+            await catalogTransfers.synchronize()
         }
     }
 }

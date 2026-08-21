@@ -22,6 +22,9 @@ targets:
           - audio
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSLocalNetworkUsageDescription: ShizoMusic uses your local network to connect to your private music server.
     sources:
       - path: Sources/App
       - path: Sources/Domain
