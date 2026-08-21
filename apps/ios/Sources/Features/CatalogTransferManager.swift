@@ -3,6 +3,7 @@ import Foundation
 
 extension Notification.Name {
     static let catalogLibraryDidChange = Notification.Name("ShizoMusic.catalogLibraryDidChange")
+    static let musicFolderDidChange = Notification.Name("ShizoMusic.musicFolderDidChange")
 }
 
 @MainActor
@@ -52,6 +53,19 @@ final class CatalogTransferManager: NSObject, ObservableObject {
     func download(trackID: String) async {
         do { try await repository.enqueueDownload(trackID: trackID); await reload(); if let item = transfers.first(where: { $0.trackID == trackID && $0.direction == .download && $0.state == .queued }) { await resume(item) } }
         catch { errorMessage = error.localizedDescription }
+    }
+
+    func download(remoteFileID: String) async {
+        do {
+            guard let trackID = try await repository.enqueueDownload(remoteFileID: remoteFileID) else {
+                errorMessage = String(localized: "search.download_source_unavailable")
+                return
+            }
+            await reload()
+            if let item = transfers.first(where: { $0.trackID == trackID && $0.direction == .download && $0.state == .queued }) {
+                await resume(item)
+            }
+        } catch { errorMessage = error.localizedDescription }
     }
 
     func pause(_ transfer: MediaTransfer) async {
@@ -106,7 +120,7 @@ final class CatalogTransferManager: NSObject, ObservableObject {
     func deleteLocalCopy(trackID: String) async -> Int? {
         do {
             let remaining = try await repository.deleteLocalCopy(trackID: trackID)
-            NotificationCenter.default.post(name: .catalogLibraryDidChange, object: nil)
+            NotificationCenter.default.post(name: .musicFolderDidChange, object: nil)
             await reload()
             return remaining
         }
@@ -118,7 +132,7 @@ final class CatalogTransferManager: NSObject, ObservableObject {
     func removeAllDownloads() async {
         do {
             try await repository.removeAllDownloads()
-            NotificationCenter.default.post(name: .catalogLibraryDidChange, object: nil)
+            NotificationCenter.default.post(name: .musicFolderDidChange, object: nil)
             await reload()
         } catch { errorMessage = error.localizedDescription }
     }
@@ -258,7 +272,7 @@ extension CatalogTransferManager: URLSessionTaskDelegate, URLSessionDownloadDele
         Task { @MainActor in
             do {
                 try await self.repository.finishDownload(id, temporaryURL: retained)
-                NotificationCenter.default.post(name: .catalogLibraryDidChange, object: nil)
+                NotificationCenter.default.post(name: .musicFolderDidChange, object: nil)
             } catch {
                 try? await self.repository.setTransferState(id, .failed, error: error.localizedDescription)
             }

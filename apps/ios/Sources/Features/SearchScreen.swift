@@ -17,15 +17,27 @@ struct SearchScreen: View {
     @EnvironmentObject private var playback: PlaybackCoordinator
     @EnvironmentObject private var localLibrary: LocalMediaLibrary
     @EnvironmentObject private var playlistStore: PlaylistStore
+    @EnvironmentObject private var musicSearch: MusicSearchStore
     @State private var query = ""
     @State private var category: SearchCategory = .all
 
-    private var tracks: [PlayableTrack] { localLibrary.searchTracks(query: query) }
+    private var localTracks: [PlayableTrack] { localLibrary.searchTracks(query: query) }
+    private var trackResults: [MusicSearchResult] {
+        if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return localTracks.map { track in
+                MusicSearchResult(id: track.id, provider: "offline", title: track.title, artist: track.artist,
+                                  album: track.albumTitle, duration: TimeInterval(track.durationSeconds), artworkURL: track.artworkURL,
+                                  webpageURL: nil, streamURL: track.fileURL, capabilities: [.search, .stream, .download],
+                                  attribution: nil, localTrack: track)
+            }
+        }
+        return musicSearch.results
+    }
     private var artists: [LocalArtist] {
         localLibrary.artists.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.tracks.contains(where: matches) }
     }
     private var releases: [LocalRelease] {
-        let matchedIDs = Set(tracks.compactMap(\.releaseID))
+        let matchedIDs = Set(localTracks.compactMap(\.releaseID))
         return localLibrary.releases.filter {
             query.isEmpty || matchedIDs.contains($0.id) || $0.title.localizedCaseInsensitiveContains(query) || $0.artist.localizedCaseInsensitiveContains(query)
         }
@@ -33,7 +45,7 @@ struct SearchScreen: View {
     private var playlists: [Playlist] {
         playlistStore.playlists.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) }
     }
-    private var hasResults: Bool { !tracks.isEmpty || !artists.isEmpty || !releases.isEmpty || !playlists.isEmpty }
+    private var hasResults: Bool { !trackResults.isEmpty || !artists.isEmpty || !releases.isEmpty || !playlists.isEmpty }
 
     var body: some View {
         NavigationStack {
@@ -44,12 +56,21 @@ struct SearchScreen: View {
                         Text("search.title").font(.largeTitle.bold())
                         SearchField(query: $query)
                         SearchCategoryBar(selection: $category)
+                        if musicSearch.isSearching && !query.isEmpty {
+                            ProgressView("search.searching_more").frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        ForEach(musicSearch.failures) { failure in
+                            ProviderFailureBanner(failure: failure) {
+                                Task { await musicSearch.retry(failure.provider, query: query) }
+                            }
+                        }
                         if localLibrary.isLoading {
                             ProgressView("library.loading")
                                 .frame(maxWidth: .infinity).padding(.vertical, 50)
-                        } else if let error = localLibrary.errorMessage {
+                        } else if let error = localLibrary.errorMessage, query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             CatalogErrorState(message: error)
-                        } else if localLibrary.tracks.isEmpty && playlistStore.playlists.isEmpty {
+                        } else if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                                  localLibrary.tracks.isEmpty && playlistStore.playlists.isEmpty {
                             CatalogEmptyState(title: "search.local_empty_title", detail: "search.local_empty_detail", icon: "music.note.house")
                         } else if !hasResults {
                             CatalogEmptyState(title: "search.nothing_found", detail: "search.try_another_query", icon: "magnifyingglass")
@@ -63,17 +84,25 @@ struct SearchScreen: View {
             .toolbar(.hidden, for: .navigationBar)
         }
         .preferredColorScheme(.dark)
-        .task(id: query) { await localLibrary.search(query: query) }
+        .task(id: query) {
+            if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled else { return }
+            }
+            await musicSearch.search(query)
+            guard !Task.isCancelled else { return }
+            await localLibrary.search(query: query)
+        }
     }
 
     @ViewBuilder private var results: some View {
         switch category {
         case .all:
             SearchArtistResults(artists: Array(artists.prefix(3)))
-            SearchTrackResults(tracks: Array(tracks.prefix(8)), onPlay: play)
+            MusicSearchTrackResults(results: Array(trackResults.prefix(8)), onPlay: play)
             SearchReleaseResults(releases: Array(releases.prefix(6)))
             PlaylistResultsList(playlists: Array(playlists.prefix(4)))
-        case .tracks: SearchTrackResults(tracks: tracks, onPlay: play)
+        case .tracks: MusicSearchTrackResults(results: trackResults, onPlay: play)
         case .artists: SearchArtistResults(artists: artists)
         case .releases: SearchReleaseResults(releases: releases)
         case .playlists:
@@ -87,8 +116,10 @@ struct SearchScreen: View {
         track.title.localizedCaseInsensitiveContains(query) || track.artist.localizedCaseInsensitiveContains(query) || (track.albumTitle?.localizedCaseInsensitiveContains(query) ?? false)
     }
 
-    private func play(_ track: PlayableTrack) {
-        playback.play(tracks, startingAt: tracks.firstIndex(of: track) ?? 0, context: .search(query))
+    private func play(_ result: MusicSearchResult) {
+        guard let track = result.playableTrack else { return }
+        let playable = trackResults.compactMap(\.playableTrack)
+        playback.play(playable, startingAt: playable.firstIndex(of: track) ?? 0, context: .search(query))
     }
 }
 
@@ -110,5 +141,11 @@ private struct SearchBackground: View {
 }
 
 #Preview("Local search") {
-    SearchScreen().environmentObject(PlaybackCoordinator()).environmentObject(LocalMediaLibrary()).environmentObject(PlaylistStore())
+    let authorization = AuthorizationStore()
+    SearchScreen()
+        .environmentObject(PlaybackCoordinator())
+        .environmentObject(LocalMediaLibrary())
+        .environmentObject(PlaylistStore())
+        .environmentObject(MusicSearchStore(authorization: authorization))
+        .environmentObject(CatalogTransferManager(authorization: authorization))
 }

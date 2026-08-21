@@ -29,6 +29,13 @@
       "when": 1787246245665,
       "tag": "0003_wealthy_taskmaster",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787323310522,
+      "tag": "0004_lovely_iron_monger",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,9 @@ import { validateOperation, type SyncStore } from "./sync/models.js";
 import { MemoryCatalogStore } from "./catalog/memory-store.js";
 import { registerCatalogRoutes } from "./catalog/routes.js";
 import type { CatalogStore } from "./catalog/models.js";
+import { CatalogMusicSourceAdapter } from "./search/catalog-adapter.js";
+import { registerSearchRoutes } from "./search/routes.js";
+import { MemoryMusicSearchCache, MusicSearchService } from "./search/service.js";
 
 interface BuildAppOptions {
   authStore?: AuthStore;
@@ -16,6 +19,7 @@ interface BuildAppOptions {
   bootstrapInvitationCode?: string;
   syncStore?: SyncStore;
   catalogStore?: CatalogStore;
+  searchService?: MusicSearchService;
 }
 
 function requiredString(value: unknown, field: string): string {
@@ -31,6 +35,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const bootstrapCode = options.bootstrapInvitationCode ?? process.env.OWNER_INVITE_CODE ?? "OWNER-DEVELOPMENT";
   const syncStore = options.syncStore ?? new MemorySyncStore();
   const catalogStore = options.catalogStore ?? new MemoryCatalogStore();
+  const searchService = options.searchService ?? new MusicSearchService(
+    [new CatalogMusicSourceAdapter(catalogStore)],
+    new MemoryMusicSearchCache(),
+  );
 
   app.register(cors, { origin: false });
   app.addContentTypeParser("application/octet-stream", { parseAs: "buffer" }, (_request, body, done) => done(null, body));
@@ -148,6 +156,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   });
 
   registerCatalogRoutes(app, catalogStore, principal);
+  registerSearchRoutes(app, searchService, principal);
 
   return app;
 }

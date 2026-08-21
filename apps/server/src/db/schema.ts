@@ -170,3 +170,23 @@ export const mediaJobs = pgTable("media_jobs", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [index("media_jobs_ready_idx").on(table.state, table.nextAttemptAt)]);
+
+export const providerSearchTracks = pgTable("provider_search_tracks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  provider: text("provider").notNull(),
+  externalId: text("external_id").notNull(),
+  title: text("title").notNull(),
+  artist: text("artist").notNull(),
+  album: text("album"),
+  duration: doublePrecision("duration").notNull().default(0),
+  artworkUrl: text("artwork_url"),
+  webpageUrl: text("webpage_url"),
+  streamPath: text("stream_path"),
+  capabilities: jsonb("capabilities").notNull(),
+  attribution: text("attribution"),
+  lastQuery: text("last_query").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("provider_search_tracks_provider_external_unique").on(table.provider, table.externalId),
+  index("provider_search_tracks_query_idx").on(table.lastQuery, table.updatedAt),
+]);

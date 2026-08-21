@@ -173,6 +173,15 @@ actor CatalogRepository {
         }
     }
 
+    func enqueueDownload(remoteFileID: String) async throws -> String? {
+        let trackID = try await database.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT trackID FROM trackSource WHERE remoteFileID=? AND sourceKind='remote' LIMIT 1", arguments: [remoteFileID])
+        }
+        guard let trackID else { return nil }
+        try await enqueueDownload(trackID: trackID)
+        return trackID
+    }
+
     func transfers() async throws -> [MediaTransfer] {
         try await database.writer.read { db in
             let rows = try Row.fetchAll(db, sql: "SELECT mt.*, COALESCE(t.title, mt.contentHash) title FROM mediaTransfer mt LEFT JOIN track t ON t.id=mt.trackID ORDER BY mt.updatedAt DESC")
@@ -218,7 +227,9 @@ actor CatalogRepository {
             throw CocoaError(.fileReadCorruptFile)
         }
         try await database.writer.write { db in
-            let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.appendingPathComponent("ShizoMusic/Downloads", isDirectory: true)
+            // A downloaded catalog item becomes offline only by becoming a real file
+            // in the same user-visible Music directory as manually imported files.
+            let root = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("Music", isDirectory: true)
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             let destination = root.appendingPathComponent("\(metadata.hash).\(metadata.format)")
             try? FileManager.default.removeItem(at: destination)

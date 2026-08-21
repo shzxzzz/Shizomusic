@@ -1,5 +1,105 @@
 import SwiftUI
 
+struct MusicSearchTrackResults: View {
+    @EnvironmentObject private var catalogTransfers: CatalogTransferManager
+    let results: [MusicSearchResult]
+    let onPlay: (MusicSearchResult) -> Void
+
+    var body: some View {
+        if !results.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                SearchSectionTitle("search.tracks")
+                ForEach(results, id: \.stableID) { result in
+                    HStack(spacing: 10) {
+                        Button { onPlay(result) } label: {
+                            HStack(spacing: 12) {
+                                TrackArtworkView(artworkURL: result.artworkURL, fallbackName: "MistyLake")
+                                    .scaledToFill().frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 9))
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(verbatim: result.title).font(.subheadline.weight(.semibold)).lineLimit(1)
+                                    HStack(spacing: 6) {
+                                        Text(verbatim: result.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                        SourceBadge(provider: result.provider)
+                                    }
+                                    if let attribution = result.attribution, result.provider == "soundcloud" {
+                                        Text(verbatim: attribution).font(.caption2).foregroundStyle(Color.orange.opacity(0.9)).lineLimit(1)
+                                    }
+                                }
+                                Spacer()
+                                Text(verbatim: result.duration.trackDurationText).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                            }.contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(result.playableTrack == nil)
+
+                        if let localTrack = result.localTrack {
+                            TrackActionsMenu(track: localTrack)
+                        } else {
+                            Menu {
+                                Button("downloads.make_offline") {
+                                    guard result.provider == "catalog" else { return }
+                                    Task { await catalogTransfers.download(remoteFileID: result.id) }
+                                }
+                                .disabled(!result.capabilities.contains(.download) || result.provider != "catalog")
+                                if let webpage = result.webpageURL {
+                                    Link("search.open_provider", destination: webpage)
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis").frame(width: 32, height: 44)
+                            }
+                        }
+                    }
+                }
+                if results.contains(where: { $0.provider == "soundcloud" }) {
+                    Text("search.soundcloud_attribution").font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+}
+
+private struct SourceBadge: View {
+    let provider: String
+    var body: some View {
+        Text(provider == "soundcloud" ? "SoundCloud" : provider == "catalog" ? "ShizoMusic" : String(localized: "search.source_offline"))
+            .font(.system(size: 9, weight: .bold)).textCase(.uppercase)
+            .foregroundStyle(provider == "soundcloud" ? Color.orange : Color.white.opacity(0.82))
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background((provider == "soundcloud" ? Color.orange : Color.white).opacity(0.14), in: Capsule())
+    }
+}
+
+struct ProviderFailureBanner: View {
+    let failure: MusicSourceFailure
+    let retry: () -> Void
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: failure.kind == .rateLimit ? "clock.badge.exclamationmark" : "wifi.exclamationmark")
+            VStack(alignment: .leading, spacing: 2) {
+                Text(failure.provider == "soundcloud" ? "SoundCloud" : failure.provider).font(.caption.bold())
+                Text(messageKey).font(.caption2).foregroundStyle(.secondary)
+                if let retryAfter = failure.retryAfterSeconds, retryAfter > 0 {
+                    Text("\(String(localized: "search.retry_after")) \(retryAfter)s")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Button("common.retry", action: retry).font(.caption.bold())
+        }
+        .padding(10).background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var messageKey: LocalizedStringKey {
+        switch failure.kind {
+        case .authentication: "search.provider_authentication"
+        case .rateLimit: "search.provider_rate_limit"
+        case .geoRestricted: "search.provider_geo_restricted"
+        case .temporary: "search.provider_temporary"
+        case .unavailable: "search.provider_unavailable"
+        }
+    }
+}
+
 struct SearchField: View {
     @Binding var query: String
     var body: some View {

@@ -74,6 +74,26 @@ struct TrackTests {
         #expect(rediscoveredTracks.first?.id == originalID)
     }
 
+    @Test func remoteCatalogTrackDoesNotEnterOfflineSnapshot() async throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("shizomusic-\(UUID().uuidString).sqlite").path
+        let database = try LibraryDatabase(path: path)
+        let repository = GRDBTrackRepository(database: database)
+        let catalog = CatalogRepository(database: database)
+        let remoteID = UUID()
+        try await catalog.merge([APICatalogTrack(
+            id: remoteID, contentHash: String(repeating: "a", count: 64), byteSize: "100",
+            mimeType: "audio/mpeg", filename: "remote.mp3", status: "ready", title: "Remote only",
+            artist: "Friend", album: nil, albumArtist: nil, duration: 60, format: "mp3", codec: "mp3",
+            addedBy: .init(id: UUID(), displayName: "Friend"), streamPath: "/catalog/files/hash",
+            artworkPath: nil, createdAt: ISO8601DateFormatter().string(from: .now)
+        )], baseURL: URL(string: "https://example.test")!)
+
+        let snapshot = try await repository.snapshot(sort: .title, filter: .available)
+        let search = try await repository.search(query: "Remote")
+        #expect(snapshot.tracks.isEmpty)
+        #expect(search.isEmpty)
+    }
+
     private func media(title: String, artist: String, artists: [String], album: String, coverHash: String, contentHash: String? = nil) -> ScannedMediaFile {
         let id = UUID().uuidString
         return ScannedMediaFile(

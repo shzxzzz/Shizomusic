@@ -283,6 +283,27 @@ final class LibraryDatabase: @unchecked Sendable {
                 CREATE INDEX mediaTransfer_content_direction ON mediaTransfer(contentHash, direction);
                 """)
         }
+        migrator.registerMigration("v7.provider-search-cache") { db in
+            try db.execute(sql: """
+                CREATE TABLE providerSearchResult (
+                    provider TEXT NOT NULL,
+                    externalID TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    artist TEXT NOT NULL,
+                    album TEXT,
+                    duration DOUBLE NOT NULL,
+                    artworkURL TEXT,
+                    webpageURL TEXT,
+                    streamURL TEXT,
+                    capabilities TEXT NOT NULL,
+                    attribution TEXT,
+                    query TEXT NOT NULL,
+                    updatedAt DATETIME NOT NULL,
+                    PRIMARY KEY(provider, externalID)
+                );
+                CREATE INDEX providerSearchResult_query_updated ON providerSearchResult(query, updatedAt);
+                """)
+        }
         return migrator
     }
 }

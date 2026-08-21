@@ -118,6 +118,32 @@ struct APIUploadSession: Codable, Sendable {
 
 struct APIUploadCompletion: Codable, Sendable { let fileId: UUID; let contentHash: String; let status: String }
 
+struct APIMusicSearchItem: Codable, Sendable {
+    let id: String
+    let provider: String
+    let title: String
+    let artist: String
+    let album: String?
+    let duration: Double
+    let artworkURL: String?
+    let webpageURL: String?
+    let streamPath: String?
+    let capabilities: [String]
+    let attribution: String?
+}
+
+struct APIMusicSourceFailure: Codable, Sendable {
+    let provider: String
+    let kind: String
+    let message: String
+    let retryAfterSeconds: Int?
+}
+
+struct APIMusicSearchResponse: Codable, Sendable {
+    let results: [APIMusicSearchItem]
+    let failures: [APIMusicSourceFailure]
+}
+
 struct GeneratedAPIClient: Sendable {
     let baseURL: URL
     var session: URLSession = .shared
@@ -184,6 +210,19 @@ struct GeneratedAPIClient: Sendable {
         return response.tracks
     }
 
+    func musicSearch(query: String, accessToken: String) async throws -> APIMusicSearchResponse {
+        var components = URLComponents(url: baseURL.appending(path: "search"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "q", value: query)]
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        return try await perform(request)
+    }
+
+    func retryMusicProvider(provider: String, query: String, accessToken: String) async throws -> APIMusicSearchResponse {
+        try await post(path: "search/providers/\(provider)/retry", body: SearchRetryBody(query: query, limit: 30), accessToken: accessToken)
+    }
+
     func createUpload(filename: String, mimeType: String, byteSize: Int64, sha256: String, accessToken: String) async throws -> APIUploadSession {
         try await post(path: "catalog/uploads", body: UploadBody(filename: filename, mimeType: mimeType, byteSize: String(byteSize), sha256: sha256, partSize: 8 * 1_024 * 1_024), accessToken: accessToken)
     }
@@ -209,6 +248,11 @@ struct GeneratedAPIClient: Sendable {
     }
 
     func absoluteURL(path: String) -> URL { baseURL.appending(path: path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))) }
+
+    func absoluteURLOrRemote(_ value: String) -> URL? {
+        if let url = URL(string: value), url.scheme != nil { return url }
+        return absoluteURL(path: value)
+    }
 
     private func get<Response: Decodable>(path: String, accessToken: String) async throws -> Response {
         var request = URLRequest(url: baseURL.appending(path: path))
@@ -267,6 +311,7 @@ struct GeneratedAPIClient: Sendable {
     private struct InvitationBody: Encodable { let expiresInHours: Int }
     private struct SyncPushBody: Encodable { let operations: [APISyncOperation] }
     private struct UploadBody: Encodable { let filename: String; let mimeType: String; let byteSize: String; let sha256: String; let partSize: Int }
+    private struct SearchRetryBody: Encodable { let query: String; let limit: Int }
     private struct CatalogResponse: Decodable { let tracks: [APICatalogTrack] }
     private struct EmptyBody: Encodable {}
 }

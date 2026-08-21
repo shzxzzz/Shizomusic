@@ -9,12 +9,14 @@ struct LibraryView: View {
     @StateObject private var statisticsStore = StatisticsStore()
     @StateObject private var syncEngine: SyncEngine
     @StateObject private var catalogTransfers: CatalogTransferManager
+    @StateObject private var musicSearch: MusicSearchStore
     private let authorization: AuthorizationStore
 
     init(authorization: AuthorizationStore) {
         self.authorization = authorization
         _syncEngine = StateObject(wrappedValue: SyncEngine(authorization: authorization))
         _catalogTransfers = StateObject(wrappedValue: CatalogTransferManager(authorization: authorization))
+        _musicSearch = StateObject(wrappedValue: MusicSearchStore(authorization: authorization))
     }
 
     var body: some View {
@@ -66,6 +68,7 @@ struct LibraryView: View {
         .environmentObject(playlistStore)
         .environmentObject(statisticsStore)
         .environmentObject(catalogTransfers)
+        .environmentObject(musicSearch)
         .safeAreaInset(edge: .top, spacing: 0) {
             SyncStatusBanner(sync: syncEngine, authorization: authorization, catalogTransfers: catalogTransfers)
         }
@@ -94,6 +97,10 @@ struct LibraryView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .catalogLibraryDidChange)) { _ in
             Task { await localLibrary.load() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .musicFolderDidChange)) { _ in
+            // Only a physical Music directory change is allowed to alter Offline.
+            Task { await localLibrary.scan() }
         }
         .onChange(of: scenePhase) {
             guard scenePhase == .active else { return }

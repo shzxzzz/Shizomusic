@@ -34,7 +34,10 @@ final class GRDBTrackRepository: TrackRepository, @unchecked Sendable {
     func synchronize(files: [ScannedMediaFile], scanID: UUID) async throws {
         let releaseArtists = Self.inferReleaseArtists(files)
         try await database.writer.write { db in
-            try db.execute(sql: "UPDATE trackSource SET state = 'missing' WHERE sourceKind = 'local'")
+            // Offline is defined by physical files inside Documents/Music. Downloaded
+            // sources live there as well, so a scan must invalidate both kinds before
+            // marking the files that are actually present as available again.
+            try db.execute(sql: "UPDATE trackSource SET state = 'missing' WHERE sourceKind IN ('local','downloaded')")
             for file in files {
                 let albumArtist = file.albumTitle.flatMap { _ in
                     file.albumArtist ?? releaseArtists[Self.releaseInferenceKey(file)] ?? file.artistNames.first
@@ -280,10 +283,15 @@ final class GRDBTrackRepository: TrackRepository, @unchecked Sendable {
             predicates.append("t.id IN (\(matchingTrackIDs.map { _ in "?" }.joined(separator: ",")))")
             arguments += StatementArguments(matchingTrackIDs)
         }
+        // LibrarySnapshot backs the Offline UI. Remote catalog rows must never make
+        // a logical track appear here until the file exists in Documents/Music.
         switch filter {
-        case .all: break
-        case .available: predicates.append("EXISTS (SELECT 1 FROM trackSource sx WHERE sx.trackID = t.id AND sx.state = 'available')")
-        case .missing: predicates.append("NOT EXISTS (SELECT 1 FROM trackSource sx WHERE sx.trackID = t.id AND sx.state = 'available')")
+        case .all:
+            predicates.append("EXISTS (SELECT 1 FROM trackSource sx WHERE sx.trackID = t.id AND sx.sourceKind IN ('local','downloaded'))")
+        case .available:
+            predicates.append("EXISTS (SELECT 1 FROM trackSource sx WHERE sx.trackID = t.id AND sx.sourceKind IN ('local','downloaded') AND sx.state = 'available')")
+        case .missing:
+            predicates.append("EXISTS (SELECT 1 FROM trackSource sx WHERE sx.trackID = t.id AND sx.sourceKind IN ('local','downloaded')) AND NOT EXISTS (SELECT 1 FROM trackSource sx WHERE sx.trackID = t.id AND sx.sourceKind IN ('local','downloaded') AND sx.state = 'available')")
         }
         let order: String = switch sort {
         case .title: "t.normalizedTitle, artistDisplay"

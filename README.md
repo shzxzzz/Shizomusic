@@ -18,6 +18,16 @@ Copy-Item infra/.env.example infra/.env
 docker compose --env-file infra/.env -f infra/docker-compose.yml up --build
 ```
 
+Для поиска SoundCloud зарегистрируйте приложение, заполните `SOUNDCLOUD_CLIENT_ID` и
+`SOUNDCLOUD_CLIENT_SECRET` в `infra/.env`, затем запустите дополнительный Compose overlay:
+
+```powershell
+docker compose --env-file infra/.env -f infra/docker-compose.yml -f infra/docker-compose.soundcloud.yml up --build
+```
+
+Если переменные не заданы, SoundCloud adapter не создаётся: локальный FTS и поиск по общему
+каталогу продолжают работать без ошибок.
+
 Кроме health-checks сервер предоставляет приглашения, onboarding, access/refresh tokens, отзыв устройств и общий музыкальный каталог. PostgreSQL-схема и миграции управляются Drizzle. После первого запуска код владельца берётся из `OWNER_INVITE_CODE`.
 
 Импортированные iPhone файлы автоматически ставятся в очередь фоновой выгрузки. API принимает проверяемые SHA-256 части, собирает объект в content-addressed хранилище и передаёт его worker-процессу с FFprobe/FFmpeg для серверных метаданных и обложки. Готовые объекты отдаются с `Range`, `ETag` и исходным MIME; данные каталога и медиа лежат в Docker volume `media-data`.
