@@ -73,11 +73,14 @@ private struct ProfileOnboardingScreen: View {
     @State private var avatarData: Data?
 
     var body: some View {
+        // PhotosPicker's label is @Sendable in the current SDK. Capture an immutable
+        // snapshot instead of reading main-actor State from that closure.
+        let currentAvatarData = avatarData
         AuthorizationBackground {
             VStack(spacing: 22) {
                 PhotosPicker(selection: $photoItem, matching: .images) {
                     Group {
-                        if let avatarData, let image = UIImage(data: avatarData) {
+                        if let currentAvatarData, let image = UIImage(data: currentAvatarData) {
                             Image(uiImage: image).resizable().scaledToFill()
                         } else {
                             Image(systemName: "person.crop.circle.badge.plus").resizable().scaledToFit().padding(22)

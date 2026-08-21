@@ -147,6 +147,7 @@ final class MusicSearchStore: ObservableObject {
     }
 
     private func fingerprint(_ item: MusicSearchResult) -> String {
-        "\(item.title.libraryNormalized)|\(item.artist.libraryNormalized)|\(Int(item.duration.rounded()))"
+        let normalizedArtist = item.artist?.libraryNormalized ?? ""
+        return "\(item.title.libraryNormalized)|\(normalizedArtist)|\(Int(item.duration.rounded()))"
     }
 }
