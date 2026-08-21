@@ -39,7 +39,7 @@ final class ServerMusicSourceAdapter: MusicSourceAdapter {
         })
     }
 
-    private func map(_ item: APIMusicSearchItem, client: GeneratedAPIClient) -> MusicSearchResult? {
+    fileprivate func map(_ item: APIMusicSearchItem, client: GeneratedAPIClient) -> MusicSearchResult? {
         guard let entityType = ExternalEntityType(rawValue: item.entityType),
               let referenceType = ExternalEntityType(rawValue: item.metadataSource.reference.entityType) else { return nil }
         let reference = ExternalEntityReference(provider: item.metadataSource.reference.provider, entityType: referenceType,
@@ -109,6 +109,23 @@ final class MusicSearchStore: ObservableObject {
             failures.removeAll { $0.provider == provider }
             failures.append(.init(provider: provider, kind: .temporary, message: error.localizedDescription, retryAfterSeconds: nil))
         }
+    }
+
+    func artistLibrary(provider: String, externalID: String, name: String) async throws -> ExternalArtistLibrary {
+        guard let credentials = try await server.authorizationCredentials() else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        let response = try await credentials.client.externalArtistLibrary(
+            provider: provider, externalID: externalID, name: name, accessToken: credentials.accessToken
+        )
+        guard let artist = server.map(response.artist, client: credentials.client) else {
+            throw URLError(.cannotParseResponse)
+        }
+        return ExternalArtistLibrary(
+            artist: artist,
+            releases: response.releases.compactMap { server.map($0, client: credentials.client) },
+            tracks: response.tracks.compactMap { server.map($0, client: credentials.client) }
+        )
     }
 
     func acquire(_ result: MusicSearchResult) async {

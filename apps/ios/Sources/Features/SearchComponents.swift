@@ -110,7 +110,7 @@ struct ExternalEntityResults: View {
             VStack(alignment: .leading, spacing: 8) {
                 SearchSectionTitle(title)
                 ForEach(results, id: \.stableID) { result in
-                    HStack(spacing: 12) {
+                    let row = HStack(spacing: 12) {
                         TrackArtworkView(artworkURL: result.artworkURL, fallbackName: result.entityType == .artist ? "ArtistHero" : "MistyLake")
                             .scaledToFill().frame(width: 54, height: 54)
                             .clipShape(result.entityType == .artist ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 10)))
@@ -122,6 +122,14 @@ struct ExternalEntityResults: View {
                         Spacer()
                         if let webpage = result.webpageURL { Link(destination: webpage) { Image(systemName: "arrow.up.right.square") } }
                     }
+                    if result.entityType == .artist {
+                        NavigationLink(value: ArtistDetailDestination(
+                            name: result.title,
+                            provider: result.reference.provider,
+                            externalID: result.reference.externalID
+                        )) { row }
+                        .buttonStyle(.plain)
+                    } else { row }
                 }
             }
         }

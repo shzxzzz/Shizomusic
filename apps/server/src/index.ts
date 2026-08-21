@@ -10,6 +10,7 @@ import { AudiusMusicSourceAdapter } from "./search/audius-adapter.js";
 import { PipedMusicSourceAdapter } from "./search/piped-adapter.js";
 import type { MusicSourceAdapter } from "./search/models.js";
 import { DatabaseAcquisitionStore } from "./acquisition/database-store.js";
+import { SpotDLArtistMetadataResolver } from "./search/spotdl-metadata.js";
 
 const databaseURL = process.env.DATABASE_URL;
 if (!databaseURL) throw new Error("DATABASE_URL is required");
@@ -24,7 +25,7 @@ const app = buildApp({
   authStore: new DatabaseAuthStore(db),
   syncStore: new DatabaseSyncStore(db),
   catalogStore,
-  searchService: new MusicSearchService(searchAdapters, new DatabaseMusicSearchCache(db)),
+  searchService: new MusicSearchService(searchAdapters, new DatabaseMusicSearchCache(db), new SpotDLArtistMetadataResolver()),
   acquisitionStore: new DatabaseAcquisitionStore(db),
   readiness: async () => { await pool.query("select 1"); },
 });

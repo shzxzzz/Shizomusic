@@ -247,6 +247,21 @@ paths:
         '429': { $ref: '#/components/responses/Error' }
         '451': { $ref: '#/components/responses/Error' }
         '503': { $ref: '#/components/responses/Error' }
+  /external/artists/{provider}/{externalId}:
+    get:
+      summary: Resolve a complete external artist library using metadata providers
+      operationId: getExternalArtistLibrary
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: provider, required: true, schema: { type: string } }
+        - { in: path, name: externalId, required: true, schema: { type: string } }
+        - { in: query, name: name, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
+      responses:
+        '200': { description: Artist card, releases and tracks, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalArtistLibrary' } } } }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /acquisitions:
     post:
       summary: Queue a server-side external media acquisition
@@ -518,6 +533,13 @@ components:
       properties:
         results: { type: array, items: { $ref: '#/components/schemas/MusicSearchItem' } }
         failures: { type: array, items: { $ref: '#/components/schemas/MusicSourceFailure' } }
+    ExternalArtistLibrary:
+      type: object
+      required: [artist, releases, tracks]
+      properties:
+        artist: { $ref: '#/components/schemas/MusicSearchItem' }
+        releases: { type: array, items: { $ref: '#/components/schemas/MusicSearchItem' } }
+        tracks: { type: array, items: { $ref: '#/components/schemas/MusicSearchItem' } }
     AcquisitionRequest:
       type: object
       required: [reference, method, title]

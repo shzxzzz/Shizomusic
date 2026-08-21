@@ -70,6 +70,12 @@ struct MusicSourceBatch: Sendable {
     let failures: [MusicSourceFailure]
 }
 
+struct ExternalArtistLibrary: Sendable {
+    let artist: MusicSearchResult
+    let releases: [MusicSearchResult]
+    let tracks: [MusicSearchResult]
+}
+
 @MainActor
 protocol MusicSourceAdapter: AnyObject {
     var id: String { get }

@@ -28,6 +28,22 @@ export function registerSearchRoutes(
     return service.search(body.query.trim(), limit, params.provider);
   });
 
+  app.get("/external/artists/:provider/:externalId", async (request) => {
+    await principal(request);
+    const query = request.query as { name?: string };
+    const name = query.name?.trim() ?? "";
+    if (!name || name.length > 200) throw new AuthError("invalid_artist_name", 400, "search.invalid_artist_name");
+    try { return await service.artistLibrary(name); }
+    catch (error) {
+      if (error instanceof MusicProviderError) {
+        const status = error.kind === "authentication" ? 502 : error.kind === "rate_limit" ? 429
+          : error.kind === "temporary" ? 503 : 404;
+        throw new AuthError(`provider_${error.kind}`, status, error.message);
+      }
+      throw error;
+    }
+  });
+
   // Like catalog streaming, this route is intentionally usable by AVPlayer without
   // custom bearer headers. It only resolves an opaque public-provider identifier.
   app.get("/external/audio/:provider/:entityType/:externalId", async (request, reply) => {

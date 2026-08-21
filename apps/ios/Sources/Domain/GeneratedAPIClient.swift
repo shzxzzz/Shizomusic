@@ -148,6 +148,12 @@ struct APIMusicSearchResponse: Codable, Sendable {
     let failures: [APIMusicSourceFailure]
 }
 
+struct APIExternalArtistLibrary: Codable, Sendable {
+    let artist: APIMusicSearchItem
+    let releases: [APIMusicSearchItem]
+    let tracks: [APIMusicSearchItem]
+}
+
 struct APIAcquisitionJob: Codable, Identifiable, Sendable {
     let id: UUID
     let reference: APIMusicSearchItem.Reference
@@ -243,6 +249,17 @@ struct GeneratedAPIClient: Sendable {
 
     func retryMusicProvider(provider: String, query: String, accessToken: String) async throws -> APIMusicSearchResponse {
         try await post(path: "search/providers/\(provider)/retry", body: SearchRetryBody(query: query, limit: 30), accessToken: accessToken)
+    }
+
+    func externalArtistLibrary(provider: String, externalID: String, name: String, accessToken: String) async throws -> APIExternalArtistLibrary {
+        let safeProvider = provider.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? provider
+        let safeID = externalID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? externalID
+        var components = URLComponents(url: baseURL.appending(path: "external/artists/\(safeProvider)/\(safeID)"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "name", value: name)]
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        return try await perform(request)
     }
 
     func createAcquisition(result: MusicSearchResult, accessToken: String) async throws -> APIAcquisitionJob {

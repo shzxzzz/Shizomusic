@@ -4,6 +4,7 @@ import { PipedMusicSourceAdapter } from "../src/search/piped-adapter.js";
 import type { MusicSearchCache, MusicSourceAdapter, MusicSourceSearchResult, NormalizedMusicResult } from "../src/search/models.js";
 import { MusicProviderError } from "../src/search/models.js";
 import { MemoryMusicSearchCache, MusicSearchService } from "../src/search/service.js";
+import { SpotDLArtistMetadataResolver } from "../src/search/spotdl-metadata.js";
 
 class RecordingCache implements MusicSearchCache {
   saved: string[] = [];
@@ -65,7 +66,11 @@ describe("two-layer music search", () => {
     const fetcher = (async (input: string | URL | Request) => {
       const url = String(input); calls.push(url);
       if (url.startsWith("https://bad")) throw new Error("offline");
-      if (url.includes("/search")) return Response.json({ items: [{ url: "/watch?v=abc123XYZ", title: "Video", uploaderName: "Creator", duration: 90 }] });
+      if (url.includes("/search")) return Response.json({ items: [
+        { type: "stream", url: "/watch?v=abc123XYZ", title: "Video", uploaderName: "Creator", duration: 90 },
+        { type: "channel", url: "/channel/UCartist123", name: "Creator", thumbnail: "https://art.test/artist.jpg" },
+        { type: "playlist", url: "/playlist?list=PLrelease123", name: "Release", uploaderName: "Creator" },
+      ] });
       return Response.json({ audioStreams: [{ url: "https://temporary.cdn/audio", bitrate: 128000 }] });
     }) as typeof fetch;
     const piped = new PipedMusicSourceAdapter(["https://bad", "https://good"], fetcher);
@@ -73,6 +78,24 @@ describe("two-layer music search", () => {
     expect(track.metadataSource.reference.externalID).toBe("abc123XYZ");
     expect(JSON.stringify(track)).not.toContain("temporary.cdn");
     expect(await piped.resolveAudio(track.metadataSource.reference)).toBe("https://temporary.cdn/audio");
+    expect(result.items.map((value) => value.entityType)).toEqual(["track", "artist", "release"]);
     expect(calls.some((url) => url.startsWith("https://good"))).toBe(true);
+  });
+
+  test("spotDL metadata builds an artist page with releases and acquirable tracks", async () => {
+    const metadata = JSON.stringify([
+      { song_id: "one", name: "First", artist: "17 Seventeen", artists: ["17 Seventeen"], album_name: "Album A",
+        duration: 120, song_url: "https://open.spotify.com/track/trackOne", album_url: "https://open.spotify.com/album/albumA", image_url: "https://art.test/a.jpg" },
+      { song_id: "two", name: "Second", artist: "17 Seventeen", artists: ["17 Seventeen", "Guest"], album_name: "Album A",
+        duration: 130, song_url: "https://open.spotify.com/track/trackTwo", album_url: "https://open.spotify.com/album/albumA", image_url: "https://art.test/a.jpg" },
+    ]);
+    const resolver = new SpotDLArtistMetadataResolver(async (args) => {
+      expect(args).toContain("artist:17 Seventeen"); return metadata;
+    });
+    const result = await resolver.resolveArtist("17 Seventeen");
+    expect(result.artist.title).toBe("17 Seventeen");
+    expect(result.releases.map((value) => value.title)).toEqual(["Album A"]);
+    expect(result.tracks).toHaveLength(2);
+    expect(result.tracks.every((value) => value.acquisition.method === "spotdl" && value.acquisition.allowed)).toBe(true);
   });
 });

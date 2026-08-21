@@ -42,6 +42,10 @@ export interface MusicSourceAdapter {
   resolveAudio?(reference: ExternalEntityReference): Promise<string>;
 }
 
+export interface ArtistMetadataResolver {
+  resolveArtist(name: string): Promise<import("./spotdl-metadata.js").ExternalArtistLibrary>;
+}
+
 export interface MusicSearchCache {
   save(query: string, result: MusicSourceSearchResult): Promise<void>;
   load?(query: string, provider: string): Promise<NormalizedMusicResult[]>;

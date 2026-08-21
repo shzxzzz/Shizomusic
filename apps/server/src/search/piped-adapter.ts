@@ -15,7 +15,7 @@ export class PipedMusicSourceAdapter implements MusicSourceAdapter {
 
   async search(query: string, limit: number): Promise<MusicSourceSearchResult> {
     const payload = await this.withFallback(async (instance) => {
-      const url = new URL(`${instance.baseURL}/search`); url.searchParams.set("q", query); url.searchParams.set("filter", "videos");
+      const url = new URL(`${instance.baseURL}/search`); url.searchParams.set("q", query); url.searchParams.set("filter", "all");
       const response = await this.request(instance, url); const json = await response.json() as JSONRecord | unknown[];
       const items = Array.isArray(json) ? json : json.items;
       if (!Array.isArray(items)) throw new MusicProviderError(this.id, "malformed_response", "piped.malformed_response");
@@ -38,6 +38,12 @@ export class PipedMusicSourceAdapter implements MusicSourceAdapter {
   }
 
   private normalize(raw: JSONRecord): NormalizedMusicResult | null {
+    const rawURL = typeof raw.url === "string" ? raw.url : "";
+    const type = typeof raw.type === "string" ? raw.type.toLocaleLowerCase()
+      : rawURL.includes("/channel/") || rawURL.includes("/c/") ? "channel"
+      : rawURL.includes("list=") || rawURL.includes("/playlist/") ? "playlist" : "stream";
+    if (type === "channel") return this.normalizeCollection(raw, "artist");
+    if (type === "playlist") return this.normalizeCollection(raw, "release");
     const externalID = videoID(raw.url); const title = typeof raw.title === "string" ? raw.title : null;
     if (!externalID || !title) return null;
     const reference: ExternalEntityReference = { provider: this.id, entityType: "track", externalID, canonicalURL: `https://www.youtube.com/watch?v=${externalID}` };
@@ -47,6 +53,20 @@ export class PipedMusicSourceAdapter implements MusicSourceAdapter {
       artworkURL: typeof raw.thumbnail === "string" ? raw.thumbnail : null, metadataSource: { provider: this.id, reference },
       audioSource: { provider: this.id, reference, resolverPath: `/external/audio/${this.id}/track/${encodeURIComponent(externalID)}` },
       acquisition: { provider: this.id, reference, method: "yt_dlp", allowed: true }, attribution: "Piped · YouTube" };
+  }
+
+  private normalizeCollection(raw: JSONRecord, entityType: "artist" | "release"): NormalizedMusicResult | null {
+    const title = typeof raw.name === "string" ? raw.name : typeof raw.title === "string" ? raw.title : null;
+    const url = typeof raw.url === "string" ? raw.url : null;
+    const externalID = entityType === "artist" ? channelID(url) : playlistID(url);
+    if (!title || !externalID) return null;
+    const canonicalURL = entityType === "artist" ? `https://www.youtube.com/channel/${externalID}` : `https://www.youtube.com/playlist?list=${externalID}`;
+    const reference: ExternalEntityReference = { provider: this.id, entityType, externalID, canonicalURL };
+    return { id: `${this.id}:${entityType}:${externalID}`, entityType, title,
+      artist: entityType === "release" && typeof raw.uploaderName === "string" ? raw.uploaderName : null,
+      release: null, duration: 0, artworkURL: typeof raw.thumbnail === "string" ? raw.thumbnail : null,
+      metadataSource: { provider: this.id, reference }, audioSource: null,
+      acquisition: { provider: this.id, reference, method: "unavailable", allowed: false }, attribution: "Piped · YouTube" };
   }
 
   private async withFallback<T>(operation: (instance: InstanceState) => Promise<T>): Promise<T> {
@@ -71,5 +91,13 @@ export class PipedMusicSourceAdapter implements MusicSourceAdapter {
 function videoID(value: unknown): string | null {
   if (typeof value !== "string") return null;
   return (value.match(/[?&]v=([A-Za-z0-9_-]{6,})/) ?? value.match(/\/watch\/([A-Za-z0-9_-]{6,})/))?.[1] ?? null;
+}
+function channelID(value: string | null): string | null {
+  if (!value) return null;
+  return value.match(/\/channel\/([A-Za-z0-9_-]+)/)?.[1] ?? value.match(/\/c\/([A-Za-z0-9_-]+)/)?.[1] ?? null;
+}
+function playlistID(value: string | null): string | null {
+  if (!value) return null;
+  return value.match(/[?&]list=([A-Za-z0-9_-]+)/)?.[1] ?? value.match(/\/playlist\/([A-Za-z0-9_-]+)/)?.[1] ?? null;
 }
 function retryAfter(response: Response): number | undefined { const value = Number(response.headers.get("retry-after")); return Number.isFinite(value) ? value : undefined; }
