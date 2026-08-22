@@ -18,7 +18,7 @@ final class ServerMusicSourceAdapter: MusicSourceAdapter {
 
     func search(query: String) async throws -> MusicSourceBatch {
         guard let credentials = try await authorization.syncCredentials() else { return MusicSourceBatch(results: [], failures: []) }
-        let response = try await credentials.client.musicSearch(query: query, accessToken: credentials.accessToken)
+        let response = try await credentials.client.musicSearch(query: query, provider: "piped", accessToken: credentials.accessToken)
         let results = response.results.compactMap { map($0, client: credentials.client) }
         // Cache must complete before the values become visible to SwiftUI.
         try await cache.save(results, query: query)

@@ -238,9 +238,10 @@ struct GeneratedAPIClient: Sendable {
         return response.tracks
     }
 
-    func musicSearch(query: String, accessToken: String) async throws -> APIMusicSearchResponse {
+    func musicSearch(query: String, provider: String? = nil, accessToken: String) async throws -> APIMusicSearchResponse {
         var components = URLComponents(url: baseURL.appending(path: "search"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "q", value: query)]
+        if let provider { components.queryItems?.append(URLQueryItem(name: "provider", value: provider)) }
         var request = URLRequest(url: components.url!)
         request.httpMethod = "GET"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")

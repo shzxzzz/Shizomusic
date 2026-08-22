@@ -11,7 +11,8 @@ services:
       MEDIA_STORAGE_ROOT: /data
       AUDIUS_API_URL: ${AUDIUS_API_URL:-https://api.audius.co/v1}
       AUDIUS_API_KEY: ${AUDIUS_API_KEY:-}
-      PIPED_INSTANCES: ${PIPED_INSTANCES:-https://pipedapi.kavin.rocks,https://pipedapi.leptons.xyz,https://pipedapi.adminforge.de}
+      ENABLE_AUDIUS_SEARCH: ${ENABLE_AUDIUS_SEARCH:-false}
+      PIPED_INSTANCES: ${PIPED_INSTANCES:-https://api.piped.private.coffee,https://pipedapi.kavin.rocks,https://pipedapi.leptons.xyz}
     ports: ["3000:3000"]
     volumes: [media-data:/data]
     depends_on:

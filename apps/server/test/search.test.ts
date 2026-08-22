@@ -82,6 +82,26 @@ describe("two-layer music search", () => {
     expect(calls.some((url) => url.startsWith("https://good"))).toBe(true);
   });
 
+  test("Piped falls back when a retired API redirects to an HTML page", async () => {
+    const calls: string[] = [];
+    const fetcher = (async (input: string | URL | Request) => {
+      const url = String(input); calls.push(url);
+      if (url.startsWith("https://retired")) {
+        return new Response("<!doctype html><title>Moved</title>", { headers: { "content-type": "text/html" } });
+      }
+      return Response.json({ items: [{ type: "stream", url: "/watch?v=abc123XYZ", title: "Video" }] });
+    }) as typeof fetch;
+    const piped = new PipedMusicSourceAdapter(["https://retired", "https://current"], fetcher);
+
+    const result = await piped.search("x", 10);
+
+    expect(result.items).toHaveLength(1);
+    expect(calls).toEqual([
+      "https://retired/search?q=x&filter=all",
+      "https://current/search?q=x&filter=all",
+    ]);
+  });
+
   test("spotDL metadata builds an artist page with releases and acquirable tracks", async () => {
     const metadata = JSON.stringify([
       { song_id: "one", name: "First", artist: "17 Seventeen", artists: ["17 Seventeen"], album_name: "Album A",

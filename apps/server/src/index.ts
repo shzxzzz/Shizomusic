@@ -17,8 +17,10 @@ if (!databaseURL) throw new Error("DATABASE_URL is required");
 const { db, pool } = createDatabase(databaseURL);
 const catalogStore = new DatabaseCatalogStore(db, process.env.MEDIA_STORAGE_ROOT ?? "/data");
 const searchAdapters: MusicSourceAdapter[] = [new CatalogMusicSourceAdapter(catalogStore)];
-searchAdapters.push(new AudiusMusicSourceAdapter(process.env.AUDIUS_API_URL, process.env.AUDIUS_API_KEY));
-const pipedInstances = (process.env.PIPED_INSTANCES ?? "https://pipedapi.kavin.rocks,https://pipedapi.leptons.xyz,https://pipedapi.adminforge.de")
+if (process.env.ENABLE_AUDIUS_SEARCH === "true") {
+  searchAdapters.push(new AudiusMusicSourceAdapter(process.env.AUDIUS_API_URL, process.env.AUDIUS_API_KEY));
+}
+const pipedInstances = (process.env.PIPED_INSTANCES ?? "https://api.piped.private.coffee,https://pipedapi.kavin.rocks,https://pipedapi.leptons.xyz")
   .split(",").map((value) => value.trim()).filter(Boolean);
 searchAdapters.push(new PipedMusicSourceAdapter(pipedInstances));
 const app = buildApp({
