@@ -262,6 +262,19 @@ paths:
         '401': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
         '503': { $ref: '#/components/responses/Error' }
+  /external/releases/{provider}/{externalId}:
+    get:
+      summary: Resolve one external release and its ordered tracks
+      operationId: getExternalRelease
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: provider, required: true, schema: { type: string } }
+        - { in: path, name: externalId, required: true, schema: { type: string } }
+      responses:
+        '200': { description: External release and tracks, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalReleaseDetail' } } } }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /acquisitions:
     post:
       summary: Queue a server-side external media acquisition
@@ -519,6 +532,12 @@ components:
         audioSource: { anyOf: [{ $ref: '#/components/schemas/ExternalAudioSource' }, { type: 'null' }] }
         acquisition: { $ref: '#/components/schemas/ExternalAcquisition' }
         attribution: { type: string }
+        releaseType: { type: string, enum: [album, single, compilation, unknown] }
+        releaseDate: { type: [string, 'null'] }
+        trackCount: { type: integer, minimum: 0 }
+        discNumber: { type: integer, minimum: 0 }
+        trackNumber: { type: integer, minimum: 0 }
+        explicit: { type: boolean }
     MusicSourceFailure:
       type: object
       required: [provider, kind, message]
@@ -539,6 +558,12 @@ components:
       properties:
         artist: { $ref: '#/components/schemas/MusicSearchItem' }
         releases: { type: array, items: { $ref: '#/components/schemas/MusicSearchItem' } }
+        tracks: { type: array, items: { $ref: '#/components/schemas/MusicSearchItem' } }
+    ExternalReleaseDetail:
+      type: object
+      required: [release, tracks]
+      properties:
+        release: { $ref: '#/components/schemas/MusicSearchItem' }
         tracks: { type: array, items: { $ref: '#/components/schemas/MusicSearchItem' } }
     AcquisitionRequest:
       type: object

@@ -5,7 +5,7 @@ import { mkdir, open, rename, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { AuthPrincipal } from "../auth/models.js";
 import type { Database } from "../db/client.js";
-import { catalogFiles, mediaJobs, uploadParts, uploadSessions, users } from "../db/schema.js";
+import { acquisitionExternalReferences, catalogFiles, mediaJobs, uploadParts, uploadSessions, users } from "../db/schema.js";
 import type { CatalogStore, CatalogTrackView, StoredObject, UploadRequest, UploadSessionView } from "./models.js";
 
 const shaPattern = /^[a-f0-9]{64}$/;
@@ -114,6 +114,16 @@ export class DatabaseCatalogStore implements CatalogStore {
     }));
   }
 
+  async findByExternalReference(provider: string, entityType: string, externalID: string): Promise<CatalogTrackView | null> {
+    const [row] = await this.db.select({ file: catalogFiles, userId: users.id, displayName: users.displayName })
+      .from(acquisitionExternalReferences)
+      .innerJoin(catalogFiles, eq(catalogFiles.id, acquisitionExternalReferences.catalogFileId))
+      .innerJoin(users, eq(users.id, catalogFiles.addedByUserId))
+      .where(and(eq(acquisitionExternalReferences.provider, provider), eq(acquisitionExternalReferences.entityType, entityType),
+        eq(acquisitionExternalReferences.externalId, externalID), eq(catalogFiles.status, "ready"))).limit(1);
+    return row ? catalogView(row.file, row.userId, row.displayName) : null;
+  }
+
   async object(contentHash: string, artwork: boolean): Promise<StoredObject | null> {
     const [file] = await this.db.select().from(catalogFiles).where(eq(catalogFiles.contentHash, contentHash)).limit(1);
     if (!file || file.status !== "ready") return null;
@@ -128,6 +138,18 @@ export class DatabaseCatalogStore implements CatalogStore {
     if (!session || session.expiresAt < new Date()) throw new Error("upload_not_found");
     return session;
   }
+}
+
+function catalogView(file: typeof catalogFiles.$inferSelect, userId: string, displayName: string): CatalogTrackView {
+  return {
+    id: file.id, contentHash: file.contentHash, byteSize: file.byteSize.toString(), mimeType: file.mimeType,
+    filename: file.originalFilename, status: file.status, title: file.title ?? file.originalFilename,
+    artist: file.artist ?? "Unknown Artist", album: file.album, albumArtist: file.albumArtist,
+    duration: file.duration ?? 0, format: file.format, codec: file.codec,
+    addedBy: { id: userId, displayName }, streamPath: `/catalog/files/${file.contentHash}`,
+    artworkPath: file.artworkStorageKey ? `/catalog/files/${file.contentHash}/artwork` : null,
+    createdAt: file.createdAt.toISOString(),
+  };
 }
 
 function digest(bytes: Buffer): string { return createHash("sha256").update(bytes).digest("hex"); }

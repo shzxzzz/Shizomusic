@@ -1,114 +1,122 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import type { ExternalEntityReference, NormalizedMusicResult } from "./models.js";
+import { resolve } from "node:path";
+import type { ExternalEntityReference, ExternalReleaseType, NormalizedMusicResult } from "./models.js";
 import { MusicProviderError } from "./models.js";
 
 type JSONRecord = Record<string, unknown>;
-
-export interface ExternalArtistLibrary {
-  artist: NormalizedMusicResult;
-  releases: NormalizedMusicResult[];
-  tracks: NormalizedMusicResult[];
+export interface ExternalArtistLibrary { artist: NormalizedMusicResult; releases: NormalizedMusicResult[]; tracks: NormalizedMusicResult[] }
+export interface ExternalReleaseDetail { release: NormalizedMusicResult; tracks: NormalizedMusicResult[] }
+export interface ExternalMetadataCacheEntry { value: unknown; expiresAt: Date }
+export interface ExternalMetadataCache { load(key: string): Promise<ExternalMetadataCacheEntry | null>; save(key: string, value: unknown, expiresAt: Date): Promise<void> }
+export class MemoryExternalMetadataCache implements ExternalMetadataCache {
+  private readonly values = new Map<string, ExternalMetadataCacheEntry>();
+  async load(key: string): Promise<ExternalMetadataCacheEntry | null> { return this.values.get(key) ?? null; }
+  async save(key: string, value: unknown, expiresAt: Date): Promise<void> { this.values.set(key, { value: structuredClone(value), expiresAt }); }
 }
+export type SpotDLMetadataRunner = (args: string[], timeoutMilliseconds: number) => Promise<string>;
 
-export type SpotDLRunner = (args: string[], timeoutMilliseconds: number) => Promise<string>;
-
-/** Metadata-only spotDL integration. Audio is still resolved/acquired separately. */
 export class SpotDLArtistMetadataResolver {
   readonly id = "spotdl";
-  private readonly cache = new Map<string, { expiresAt: number; value: ExternalArtistLibrary }>();
-
-  constructor(private readonly runner: SpotDLRunner = runSpotDL,
-              private readonly timeoutMilliseconds = 45_000,
-              private readonly cacheMilliseconds = 6 * 60 * 60 * 1_000) {}
+  constructor(private readonly runner: SpotDLMetadataRunner = runHelper, private readonly cache: ExternalMetadataCache = new MemoryExternalMetadataCache(),
+              private readonly timeoutMilliseconds = 60_000, private readonly cacheMilliseconds = 24 * 60 * 60 * 1_000) {}
 
   async resolveArtist(name: string): Promise<ExternalArtistLibrary> {
     const normalized = name.trim().replace(/\s+/g, " ");
     if (!normalized) throw new MusicProviderError(this.id, "unavailable", "spotdl.artist_name_required");
-    const key = normalized.toLocaleLowerCase();
-    const cached = this.cache.get(key);
-    if (cached && cached.expiresAt > Date.now()) return structuredClone(cached.value);
-
-    let stdout: string;
+    return this.cached(`artist:${normalized.toLocaleLowerCase()}`, ["artist", normalized], normalizeArtist);
+  }
+  async resolveRelease(externalID: string): Promise<ExternalReleaseDetail> {
+    if (!/^[A-Za-z0-9]{8,64}$/.test(externalID)) throw new MusicProviderError(this.id, "unavailable", "spotdl.invalid_release");
+    return this.cached(`release:${externalID}`, ["release", externalID], normalizeReleaseDetail);
+  }
+  private async cached<T>(key: string, args: string[], normalize: (payload: unknown) => T): Promise<T> {
+    const saved = await this.cache.load(key);
+    if (saved && saved.expiresAt.getTime() > Date.now()) return structuredClone(saved.value) as T;
     try {
-      stdout = await this.runner(["save", `artist:${normalized}`, "--save-file", "-", "--max-retries", "2"], this.timeoutMilliseconds);
+      const value = normalize(parsePayload(await this.runner(args, this.timeoutMilliseconds)));
+      await this.cache.save(key, value, new Date(Date.now() + this.cacheMilliseconds));
+      return structuredClone(value);
     } catch (error) {
+      if (saved) return structuredClone(saved.value) as T;
+      if (error instanceof MusicProviderError) throw error;
       throw new MusicProviderError(this.id, "temporary", error instanceof Error ? error.message : "spotdl.failed");
     }
-    const songs = parseSongs(stdout);
-    if (!songs.length) throw new MusicProviderError(this.id, "unavailable", "spotdl.artist_not_found");
-    const value = normalizeLibrary(normalized, songs);
-    this.cache.set(key, { expiresAt: Date.now() + this.cacheMilliseconds, value });
-    return structuredClone(value);
   }
 }
 
-function parseSongs(stdout: string): JSONRecord[] {
+function parsePayload(stdout: string): unknown {
   const trimmed = stdout.trim();
-  let payload: unknown;
-  try { payload = JSON.parse(trimmed); }
+  try { return JSON.parse(trimmed); }
   catch {
-    // spotDL may print diagnostics before its JSON when providers emit warnings.
-    const start = trimmed.indexOf("["); const end = trimmed.lastIndexOf("]");
-    if (start < 0 || end <= start) throw new MusicProviderError("spotdl", "malformed_response", "spotdl.invalid_json");
-    try { payload = JSON.parse(trimmed.slice(start, end + 1)); }
-    catch { throw new MusicProviderError("spotdl", "malformed_response", "spotdl.invalid_json"); }
+    const start = trimmed.indexOf("{"); const end = trimmed.lastIndexOf("}");
+    if (start < 0 || end <= start) throw malformed();
+    try { return JSON.parse(trimmed.slice(start, end + 1)); } catch { throw malformed(); }
   }
-  const values = Array.isArray(payload) ? payload : isRecord(payload) && Array.isArray(payload.songs) ? payload.songs : [];
-  return values.filter(isRecord);
 }
-
-function normalizeLibrary(requestedName: string, songs: JSONRecord[]): ExternalArtistLibrary {
-  const artistName = text(songs[0]?.artist) ?? stringArray(songs[0]?.artists)[0] ?? requestedName;
-  const artistExternalID = externalID(text(songs[0]?.artist_url) ?? text(songs[0]?.artistUrl)) ?? stableID(artistName);
-  const artistReference: ExternalEntityReference = { provider: "spotdl", entityType: "artist", externalID: artistExternalID,
-    canonicalURL: text(songs[0]?.artist_url) ?? text(songs[0]?.artistUrl) };
-  const artwork = text(songs[0]?.artist_image_url) ?? text(songs[0]?.artistImageUrl) ?? text(songs[0]?.image_url) ?? text(songs[0]?.cover_url);
-  const artist: NormalizedMusicResult = entity(artistReference, artistName, null, null, 0, artwork, "Spotify metadata via spotDL");
-
-  const tracks = songs.map((song) => {
-    const title = text(song.name) ?? text(song.title) ?? "Unknown Track";
-    const url = text(song.song_url) ?? text(song.url);
-    const id = externalID(url) ?? text(song.song_id) ?? text(song.track_id) ?? stableID(`${artistName}|${title}|${text(song.album_name) ?? ""}`);
-    const reference: ExternalEntityReference = { provider: "spotify", entityType: "track", externalID: id, canonicalURL: url };
-    return entity(reference, title, stringArray(song.artists).join(", ") || text(song.artist) || artistName,
-      text(song.album_name) ?? text(song.album), number(song.duration), text(song.image_url) ?? text(song.cover_url), "Spotify metadata via spotDL", true);
-  });
-
-  const releasesByKey = new Map<string, NormalizedMusicResult>();
-  for (const song of songs) {
-    const title = text(song.album_name) ?? text(song.album); if (!title) continue;
-    const url = text(song.album_url); const id = externalID(url) ?? stableID(`${artistName}|${title}`);
-    if (releasesByKey.has(id)) continue;
-    const reference: ExternalEntityReference = { provider: "spotify", entityType: "release", externalID: id, canonicalURL: url };
-    releasesByKey.set(id, entity(reference, title, text(song.album_artist) ?? artistName, null, 0,
-      text(song.image_url) ?? text(song.cover_url), "Spotify metadata via spotDL"));
-  }
-  return { artist, releases: [...releasesByKey.values()], tracks };
+function normalizeArtist(payload: unknown): ExternalArtistLibrary {
+  if (!isRecord(payload) || !isRecord(payload.artist) || !Array.isArray(payload.releases)) throw malformed();
+  const raw = payload.artist; const name = text(raw.name) ?? "Unknown Artist"; const id = text(raw.id) ?? stableID(name);
+  const releases = payload.releases.filter(isRecord).map((release) => normalizeRelease(release, name));
+  const artwork = text(raw.artworkURL) ?? releases.find((item) => item.release.artworkURL)?.release.artworkURL ?? null;
+  const reference: ExternalEntityReference = { provider: "spotify", entityType: "artist", externalID: id,
+    canonicalURL: text(raw.url) ?? `https://open.spotify.com/artist/${id}` };
+  return { artist: entity(reference, name, null, null, 0, artwork, false), releases: releases.map((value) => value.release),
+    tracks: releases.flatMap((value) => value.tracks).filter(uniqueTrack) };
 }
-
+function normalizeReleaseDetail(payload: unknown): ExternalReleaseDetail {
+  if (!isRecord(payload)) throw malformed();
+  const raw = isRecord(payload.release) ? { ...payload.release, tracks: payload.tracks } : payload;
+  return normalizeRelease(raw, text(raw.artist) ?? "Unknown Artist");
+}
+function normalizeRelease(raw: JSONRecord, fallbackArtist: string): ExternalReleaseDetail {
+  const id = text(raw.id) ?? stableID(`${fallbackArtist}|${text(raw.title) ?? "release"}`); const title = text(raw.title) ?? "Unknown Release";
+  const artist = text(raw.artist) ?? fallbackArtist; const releaseType = releaseKind(raw.releaseType); const releaseDate = text(raw.releaseDate);
+  const rows = Array.isArray(raw.tracks) ? raw.tracks.filter(isRecord) : []; const artwork = text(raw.artworkURL) ?? text(rows[0]?.artworkURL);
+  const reference: ExternalEntityReference = { provider: "spotify", entityType: "release", externalID: id,
+    canonicalURL: text(raw.url) ?? `https://open.spotify.com/album/${id}` };
+  const release = { ...entity(reference, title, artist, null, 0, artwork, false), releaseType, releaseDate, trackCount: rows.length };
+  const tracks = rows.map((song) => normalizeTrack(song, artist, title, artwork, releaseType, releaseDate))
+    .sort((a, b) => (a.discNumber ?? 1) - (b.discNumber ?? 1) || (a.trackNumber ?? 0) - (b.trackNumber ?? 0));
+  return { release, tracks };
+}
+function normalizeTrack(raw: JSONRecord, fallbackArtist: string, release: string, artwork: string | null,
+                        releaseType: ExternalReleaseType, releaseDate: string | null): NormalizedMusicResult {
+  const title = text(raw.title) ?? "Unknown Track"; const artist = text(raw.artist) ?? fallbackArtist;
+  const id = text(raw.id) ?? stableID(`${artist}|${title}|${release}`);
+  const reference: ExternalEntityReference = { provider: "spotify", entityType: "track", externalID: id,
+    canonicalURL: text(raw.url) ?? `https://open.spotify.com/track/${id}` };
+  return { ...entity(reference, title, artist, release, number(raw.duration), text(raw.artworkURL) ?? artwork, true), releaseType, releaseDate,
+    discNumber: integer(raw.discNumber, 1), trackNumber: integer(raw.trackNumber, 0), explicit: raw.explicit === true };
+}
 function entity(reference: ExternalEntityReference, title: string, artist: string | null, release: string | null,
-                duration: number, artworkURL: string | null, attribution: string, acquirable = false): NormalizedMusicResult {
+                duration: number, artworkURL: string | null, acquirable: boolean): NormalizedMusicResult {
   return { id: `${reference.provider}:${reference.entityType}:${reference.externalID}`, entityType: reference.entityType, title, artist, release,
     duration, artworkURL, metadataSource: { provider: "spotdl", reference }, audioSource: null,
-    acquisition: { provider: reference.provider, reference, method: acquirable ? "spotdl" : "unavailable", allowed: acquirable }, attribution };
+    acquisition: { provider: reference.provider, reference, method: acquirable ? "spotdl" : "unavailable", allowed: acquirable },
+    attribution: "Spotify metadata via spotDL" };
 }
-
-function runSpotDL(args: string[], timeoutMilliseconds: number): Promise<string> {
+function runHelper(args: string[], timeoutMilliseconds: number): Promise<string> {
+  // The helper remains in src/ when TypeScript is compiled to dist/, so resolve
+  // it from the application working directory in both dev and production.
+  const helper = resolve(process.cwd(), "src", "search", "spotdl-metadata-helper.py");
   return new Promise((resolve, reject) => {
-    const child = spawn("spotdl", args, { shell: false, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(process.env.PYTHON_BIN ?? "python3", [helper, ...args], { shell: false, stdio: ["ignore", "pipe", "pipe"] });
     const stdout: Buffer[] = []; const stderr: Buffer[] = [];
-    const timer = setTimeout(() => { child.kill("SIGKILL"); reject(new Error("spotdl.timeout")); }, timeoutMilliseconds);
+    const timer = setTimeout(() => { child.kill("SIGKILL"); reject(new Error("spotdl.metadata_timeout")); }, timeoutMilliseconds);
     child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk)); child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
     child.on("error", (error) => { clearTimeout(timer); reject(error); });
     child.on("close", (code) => { clearTimeout(timer); code === 0 ? resolve(Buffer.concat(stdout).toString())
-      : reject(new Error(Buffer.concat(stderr).toString().slice(-2_000) || `spotdl.exit_${code}`)); });
+      : reject(new Error(Buffer.concat(stderr).toString().slice(-2_000) || `spotdl.helper_exit_${code}`)); });
   });
 }
-
+function uniqueTrack(value: NormalizedMusicResult, index: number, values: NormalizedMusicResult[]): boolean {
+  return values.findIndex((item) => item.metadataSource.reference.externalID === value.metadataSource.reference.externalID) === index;
+}
+function malformed(): MusicProviderError { return new MusicProviderError("spotdl", "malformed_response", "spotdl.invalid_payload"); }
 function isRecord(value: unknown): value is JSONRecord { return typeof value === "object" && value !== null && !Array.isArray(value); }
 function text(value: unknown): string | null { return typeof value === "string" && value.trim() ? value.trim() : null; }
 function number(value: unknown): number { const parsed = Number(value); return Number.isFinite(parsed) && parsed > 0 ? parsed : 0; }
-function stringArray(value: unknown): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; }
-function externalID(value: string | null): string | null { return value?.match(/open\.spotify\.com\/(?:artist|track|album)\/([A-Za-z0-9]+)/)?.[1] ?? null; }
+function integer(value: unknown, fallback: number): number { const parsed = Number(value); return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback; }
+function releaseKind(value: unknown): ExternalReleaseType { return value === "album" || value === "single" || value === "compilation" ? value : "unknown"; }
 function stableID(value: string): string { return createHash("sha256").update(value.toLocaleLowerCase()).digest("hex").slice(0, 24); }

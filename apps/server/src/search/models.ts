@@ -1,6 +1,7 @@
 export type ExternalEntityType = "track" | "artist" | "release";
 export type MusicSourceCapability = "search" | "stream" | "acquire";
 export type AcquisitionMethod = "direct" | "yt_dlp" | "spotdl" | "unavailable";
+export type ExternalReleaseType = "album" | "single" | "compilation" | "unknown";
 
 export type MusicSourceFailureKind = "authentication" | "rate_limit" | "geo_restricted" | "temporary" | "unavailable" | "malformed_response";
 
@@ -21,6 +22,12 @@ export interface NormalizedMusicResult {
   audioSource: ExternalAudioDescriptor | null;
   acquisition: ExternalAcquisitionDescriptor;
   attribution: string;
+  releaseType?: ExternalReleaseType;
+  releaseDate?: string | null;
+  trackCount?: number;
+  discNumber?: number;
+  trackNumber?: number;
+  explicit?: boolean;
 }
 
 export interface MusicSourceFailure {
@@ -39,11 +46,13 @@ export interface MusicSourceAdapter {
   readonly id: string;
   readonly capabilities: ReadonlySet<MusicSourceCapability>;
   search(query: string, limit: number): Promise<MusicSourceSearchResult>;
+  lookupExternal?(reference: ExternalEntityReference): Promise<NormalizedMusicResult | null>;
   resolveAudio?(reference: ExternalEntityReference): Promise<string>;
 }
 
 export interface ArtistMetadataResolver {
   resolveArtist(name: string): Promise<import("./spotdl-metadata.js").ExternalArtistLibrary>;
+  resolveRelease(externalID: string): Promise<import("./spotdl-metadata.js").ExternalReleaseDetail>;
 }
 
 export interface MusicSearchCache {

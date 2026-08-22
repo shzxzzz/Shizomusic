@@ -51,7 +51,9 @@ final class ServerMusicSourceAdapter: MusicSourceAdapter {
             canAcquire: item.acquisition.allowed, title: item.title, artist: item.artist, release: item.release,
             duration: item.duration, artworkURL: item.artworkURL.flatMap { client.absoluteURLOrRemote($0) },
             streamURL: item.audioSource?.resolverPath.flatMap { client.absoluteURLOrRemote($0) },
-            attribution: item.attribution, localTrack: nil)
+            attribution: item.attribution, localTrack: nil,
+            releaseType: item.releaseType.flatMap(ExternalReleaseType.init(rawValue:)), releaseDate: item.releaseDate,
+            trackCount: item.trackCount, discNumber: item.discNumber, trackNumber: item.trackNumber, isExplicit: item.explicit ?? false)
     }
 }
 
@@ -126,6 +128,13 @@ final class MusicSearchStore: ObservableObject {
             releases: response.releases.compactMap { server.map($0, client: credentials.client) },
             tracks: response.tracks.compactMap { server.map($0, client: credentials.client) }
         )
+    }
+
+    func externalRelease(provider: String, externalID: String) async throws -> ExternalReleaseDetail {
+        guard let credentials = try await server.authorizationCredentials() else { throw URLError(.userAuthenticationRequired) }
+        let response = try await credentials.client.externalRelease(provider: provider, externalID: externalID, accessToken: credentials.accessToken)
+        guard let release = server.map(response.release, client: credentials.client) else { throw URLError(.cannotParseResponse) }
+        return ExternalReleaseDetail(release: release, tracks: response.tracks.compactMap { server.map($0, client: credentials.client) })
     }
 
     func acquire(_ result: MusicSearchResult) async {

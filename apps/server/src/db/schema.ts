@@ -196,6 +196,13 @@ export const providerSearchTracks = pgTable("provider_search_tracks", {
   index("provider_search_tracks_query_idx").on(table.lastQuery, table.updatedAt),
 ]);
 
+export const externalMetadataCache = pgTable("external_metadata_cache", {
+  key: text("key").primaryKey(),
+  payload: jsonb("payload").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("external_metadata_cache_expiry_idx").on(table.expiresAt)]);
+
 export const acquisitionJobs = pgTable("acquisition_jobs", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),

@@ -5,15 +5,29 @@ struct MusicSearchTrackResults: View {
     @EnvironmentObject private var musicSearch: MusicSearchStore
     let results: [MusicSearchResult]
     let onPlay: (MusicSearchResult) -> Void
+    let showsSectionTitle: Bool
+    let showsTrackNumber: Bool
+
+    init(results: [MusicSearchResult], onPlay: @escaping (MusicSearchResult) -> Void,
+         showsSectionTitle: Bool = true, showsTrackNumber: Bool = false) {
+        self.results = results
+        self.onPlay = onPlay
+        self.showsSectionTitle = showsSectionTitle
+        self.showsTrackNumber = showsTrackNumber
+    }
 
     var body: some View {
         if !results.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                SearchSectionTitle("search.tracks")
+                if showsSectionTitle { SearchSectionTitle("search.tracks") }
                 ForEach(results, id: \.stableID) { result in
                     HStack(spacing: 10) {
                         Button { onPlay(result) } label: {
                             HStack(spacing: 12) {
+                                if showsTrackNumber {
+                                    Text(verbatim: result.trackNumber.map(String.init) ?? "–")
+                                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 22)
+                                }
                                 TrackArtworkView(artworkURL: result.artworkURL, fallbackName: "MistyLake")
                                     .scaledToFill().frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 9))
                                 VStack(alignment: .leading, spacing: 3) {
@@ -60,7 +74,7 @@ struct MusicSearchTrackResults: View {
 private struct SourceBadge: View {
     let provider: String
     var body: some View {
-        Text(provider == "audius" ? "Audius" : provider == "piped" ? "Piped" : provider == "catalog" ? "ShizoMusic" : String(localized: "search.source_offline"))
+        Text(provider == "audius" ? "Audius" : provider == "piped" ? "Piped" : provider == "spotdl" ? "Spotify metadata · spotDL audio" : provider == "catalog" ? "ShizoMusic" : String(localized: "search.source_offline"))
             .font(.system(size: 9, weight: .bold)).textCase(.uppercase)
             .foregroundStyle(provider == "audius" ? Color.orange : provider == "piped" ? Color.red : Color.white.opacity(0.82))
             .padding(.horizontal, 6).padding(.vertical, 2)
@@ -129,6 +143,14 @@ struct ExternalEntityResults: View {
                             externalID: result.reference.externalID
                         )) { row }
                         .buttonStyle(.plain)
+                    } else if result.entityType == .release && result.reference.provider == "spotify" {
+                        NavigationLink(value: ExternalReleaseDestination(
+                            provider: result.reference.provider,
+                            externalID: result.reference.externalID,
+                            title: result.title,
+                            artist: result.artist ?? "",
+                            artworkURL: result.artworkURL
+                        )) { row }.buttonStyle(.plain)
                     } else { row }
                 }
             }

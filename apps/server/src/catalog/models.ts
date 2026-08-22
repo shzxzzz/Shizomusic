@@ -45,5 +45,6 @@ export interface CatalogStore {
   completeUpload(principal: AuthPrincipal, uploadId: string): Promise<{ fileId: string; contentHash: string; status: string }>;
   cancelUpload(principal: AuthPrincipal, uploadId: string): Promise<void>;
   listCatalog(): Promise<CatalogTrackView[]>;
+  findByExternalReference?(provider: string, entityType: string, externalID: string): Promise<CatalogTrackView | null>;
   object(contentHash: string, artwork: boolean): Promise<StoredObject | null>;
 }

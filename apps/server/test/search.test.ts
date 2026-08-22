@@ -4,7 +4,8 @@ import { PipedMusicSourceAdapter } from "../src/search/piped-adapter.js";
 import type { MusicSearchCache, MusicSourceAdapter, MusicSourceSearchResult, NormalizedMusicResult } from "../src/search/models.js";
 import { MusicProviderError } from "../src/search/models.js";
 import { MemoryMusicSearchCache, MusicSearchService } from "../src/search/service.js";
-import { SpotDLArtistMetadataResolver } from "../src/search/spotdl-metadata.js";
+import { MemoryExternalMetadataCache, SpotDLArtistMetadataResolver } from "../src/search/spotdl-metadata.js";
+import { SpotDLStreamAdapter } from "../src/search/spotdl-stream-adapter.js";
 
 class RecordingCache implements MusicSearchCache {
   saved: string[] = [];
@@ -103,19 +104,107 @@ describe("two-layer music search", () => {
   });
 
   test("spotDL metadata builds an artist page with releases and acquirable tracks", async () => {
-    const metadata = JSON.stringify([
-      { song_id: "one", name: "First", artist: "17 Seventeen", artists: ["17 Seventeen"], album_name: "Album A",
-        duration: 120, song_url: "https://open.spotify.com/track/trackOne", album_url: "https://open.spotify.com/album/albumA", image_url: "https://art.test/a.jpg" },
-      { song_id: "two", name: "Second", artist: "17 Seventeen", artists: ["17 Seventeen", "Guest"], album_name: "Album A",
-        duration: 130, song_url: "https://open.spotify.com/track/trackTwo", album_url: "https://open.spotify.com/album/albumA", image_url: "https://art.test/a.jpg" },
-    ]);
+    const metadata = artistFixture();
     const resolver = new SpotDLArtistMetadataResolver(async (args) => {
-      expect(args).toContain("artist:17 Seventeen"); return metadata;
+      expect(args).toEqual(["artist", "17 Seventeen"]); return metadata;
     });
     const result = await resolver.resolveArtist("17 Seventeen");
     expect(result.artist.title).toBe("17 Seventeen");
-    expect(result.releases.map((value) => value.title)).toEqual(["Album A"]);
-    expect(result.tracks).toHaveLength(2);
+    expect(result.artist.metadataSource.reference.externalID).toBe("artist17");
+    expect(result.releases.map((value) => [value.title, value.releaseType])).toEqual([
+      ["Album A", "album"], ["Single B", "single"], ["Collection C", "compilation"],
+    ]);
+    expect(result.tracks).toHaveLength(4);
     expect(result.tracks.every((value) => value.acquisition.method === "spotdl" && value.acquisition.allowed)).toBe(true);
+    const release = await new SpotDLArtistMetadataResolver(async () => JSON.stringify(JSON.parse(metadata).releases[0])).resolveRelease("albumAAAA");
+    expect(release.tracks.map((value) => [value.discNumber, value.trackNumber, value.title])).toEqual([
+      [1, 1, "Prelude"], [1, 2, "Second"], [2, 1, "First"],
+    ]);
+    await expect(new SpotDLArtistMetadataResolver(async () => "not-json").resolveArtist("Broken"))
+      .rejects.toMatchObject({ kind: "malformed_response" });
+  });
+
+  test("spotDL metadata serves an expired cache when refresh fails", async () => {
+    const cache = new MemoryExternalMetadataCache();
+    const warm = new SpotDLArtistMetadataResolver(async () => artistFixture(), cache, 100, -1);
+    await warm.resolveArtist("17 Seventeen");
+    const offline = new SpotDLArtistMetadataResolver(async () => { throw new Error("offline"); }, cache);
+    expect((await offline.resolveArtist("17 Seventeen")).releases).toHaveLength(3);
+  });
+
+  test("spotDL stream resolver validates URLs and caches successful resolutions", async () => {
+    let calls = 0;
+    const adapter = new SpotDLStreamAdapter(async (args) => {
+      calls += 1; expect(args.slice(0, 2)).toEqual(["url", "https://open.spotify.com/track/trackOne123"]);
+      return "diagnostic\nhttps://audio.example.test/file.m4a\n";
+    });
+    const reference = { provider: "spotify", entityType: "track" as const, externalID: "trackOne123", canonicalURL: null };
+    expect(await adapter.resolveAudio(reference)).toBe("https://audio.example.test/file.m4a");
+    expect(await adapter.resolveAudio(reference)).toBe("https://audio.example.test/file.m4a");
+    expect(calls).toBe(1);
+    const unsafe = new SpotDLStreamAdapter(async () => "https://127.0.0.1/private");
+    await expect(unsafe.resolveAudio(reference)).rejects.toMatchObject({ kind: "unavailable" });
+  });
+
+  test("spotDL stream resolver caps concurrency and reports runner timeouts", async () => {
+    let active = 0; let maximum = 0;
+    const limited = new SpotDLStreamAdapter(async () => {
+      active += 1; maximum = Math.max(maximum, active);
+      await new Promise((resolve) => setTimeout(resolve, 5)); active -= 1;
+      return "https://audio.example.test/limited.m4a";
+    }, 100, 1_000, 2);
+    await Promise.all(["trackOne123", "trackTwo123", "trackThree123"].map((externalID) => limited.resolveAudio(
+      { provider: "spotify", entityType: "track", externalID, canonicalURL: null })));
+    expect(maximum).toBe(2);
+    const timeout = new SpotDLStreamAdapter(async () => { throw new Error("spotdl.timeout"); });
+    await expect(timeout.resolveAudio({ provider: "spotify", entityType: "track", externalID: "trackTimeout1", canonicalURL: null }))
+      .rejects.toMatchObject({ kind: "temporary", message: "spotdl.timeout" });
+  });
+
+  test("spotDL playback resolver is signed and rejects missing signatures", async () => {
+    const metadata = new SpotDLArtistMetadataResolver(async () => artistFixture());
+    const stream = new SpotDLStreamAdapter(async () => "https://audio.example.test/signed.m4a");
+    const service = new MusicSearchService([stream], new MemoryMusicSearchCache(), metadata, "test-playback-secret");
+    const track = (await service.artistLibrary("17 Seventeen")).tracks.find(
+      (value) => value.metadataSource.reference.externalID === "trackOne123")!;
+    const resolver = new URL(track.audioSource!.resolverPath!, "https://server.test");
+
+    await expect(service.resolveAudio("spotdl", "track", "trackOne123")).rejects.toMatchObject({ kind: "authentication" });
+    await expect(service.resolveAudio("spotdl", "track", "trackOne123",
+      resolver.searchParams.get("expires")!, resolver.searchParams.get("signature")!))
+      .resolves.toBe("https://audio.example.test/signed.m4a");
+  });
+
+  test("an acquired external reference wins over the spotDL resolver", async () => {
+    const catalogTrack = item("catalog");
+    catalogTrack.audioSource = { provider: "catalog", reference: catalogTrack.metadataSource.reference, resolverPath: "/catalog/files/hash" };
+    const catalog: MusicSourceAdapter = {
+      id: "catalog", capabilities: new Set(["search", "stream"]),
+      search: async () => ({ provider: "catalog", items: [] }),
+      lookupExternal: async (reference) => reference.externalID === "trackOne123" ? catalogTrack : null,
+    };
+    const metadata = new SpotDLArtistMetadataResolver(async () => artistFixture());
+    const service = new MusicSearchService([catalog, new SpotDLStreamAdapter(async () => "https://audio.example.test/fallback.m4a")],
+      new MemoryMusicSearchCache(), metadata);
+
+    const tracks = (await service.artistLibrary("17 Seventeen")).tracks;
+
+    expect(tracks.find((track) => track.metadataSource.reference.externalID === "trackOne123")?.audioSource?.provider).toBe("catalog");
+    expect(tracks.find((track) => track.metadataSource.reference.externalID === "trackTwo123")?.audioSource?.provider).toBe("spotdl");
   });
 });
+
+function artistFixture(): string {
+  return JSON.stringify({ artist: { id: "artist17", name: "17 Seventeen", url: "https://open.spotify.com/artist/artist17" }, releases: [
+    { id: "albumAAAA", title: "Album A", artist: "17 Seventeen", url: "https://open.spotify.com/album/albumAAAA", releaseType: "album",
+      releaseDate: "2025-01-02", artworkURL: "https://art.test/a.jpg", tracks: [
+        { id: "trackOne123", title: "First", artist: "17 Seventeen", duration: 120, discNumber: 2, trackNumber: 1 },
+        { id: "trackTwo123", title: "Second", artist: "17 Seventeen, Guest", duration: 130, discNumber: 1, trackNumber: 2 },
+        { id: "trackFour12", title: "Prelude", artist: "17 Seventeen", duration: 90, discNumber: 1, trackNumber: 1 },
+      ] },
+    { id: "singleBBBB", title: "Single B", artist: "17 Seventeen", url: "https://open.spotify.com/album/singleBBBB", releaseType: "single",
+      releaseDate: "2026-03-04", tracks: [{ id: "trackThree123", title: "Third", artist: "17 Seventeen", duration: 140, discNumber: 1, trackNumber: 1 }] },
+    { id: "compCCCC", title: "Collection C", artist: "17 Seventeen", url: "https://open.spotify.com/album/compCCCC", releaseType: "compilation",
+      releaseDate: "2026-07-08", tracks: [{ id: "trackOne123", title: "First", artist: "17 Seventeen", duration: 120, discNumber: 1, trackNumber: 4 }] },
+  ] });
+}

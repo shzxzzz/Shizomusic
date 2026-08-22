@@ -54,17 +54,23 @@ struct ArtistDetailScreen: View {
             ScrollView(showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: 24) {
                     header
+                    if !mergedTracks.isEmpty {
+                        Button { playback.play(mergedTracks, context: .artist(destination.externalID ?? destination.name)) } label: {
+                            Label("collection.play", systemImage: "play.fill")
+                        }
+                        .buttonStyle(.borderedProminent).tint(.white).foregroundStyle(.black)
+                    }
                     if let artist {
-                        Button { playback.play(artist.tracks, context: .artist(artist.id)) } label: { Label("collection.play", systemImage: "play.fill") }
-                            .buttonStyle(.borderedProminent).tint(.white).foregroundStyle(.black)
                         SearchTrackResults(tracks: artist.tracks, onPlay: play)
                         SearchReleaseResults(releases: releases)
                     }
                     if isLoadingExternal {
                         ProgressView("search.searching_more").frame(maxWidth: .infinity, alignment: .leading)
                     } else if let externalLibrary {
-                        MusicSearchTrackResults(results: externalLibrary.tracks, onPlay: playExternal)
-                        ExternalEntityResults(title: "artist.releases", results: externalLibrary.releases)
+                        MusicSearchTrackResults(results: externalTracksWithoutLocalDuplicates, onPlay: playExternal)
+                        ExternalEntityResults(title: "artist.releases", results: externalReleasesWithoutLocalDuplicates.filter { $0.releaseType == .album || $0.releaseType == .unknown })
+                        ExternalEntityResults(title: "artist.singles", results: externalReleasesWithoutLocalDuplicates.filter { $0.releaseType == .single })
+                        ExternalEntityResults(title: "artist.compilations", results: externalReleasesWithoutLocalDuplicates.filter { $0.releaseType == .compilation })
                     } else if artist == nil, let externalError {
                         ContentUnavailableView(
                             "library.error_title",
@@ -79,8 +85,12 @@ struct ArtistDetailScreen: View {
             }
         }
         .navigationDestination(for: CollectionDetailDestination.self) { CollectionDetailScreen(destination: $0) }
+        .navigationDestination(for: ExternalReleaseDestination.self) { ExternalReleaseDetailScreen(destination: $0) }
         .toolbar(.hidden, for: .navigationBar).preferredColorScheme(.dark)
         .task(id: destination) { await loadExternalLibrary() }
+        .onReceive(NotificationCenter.default.publisher(for: .catalogLibraryDidChange)) { _ in
+            Task { await loadExternalLibrary() }
+        }
     }
 
     private var header: some View {
@@ -104,9 +114,32 @@ struct ArtistDetailScreen: View {
     }
 
     private func playExternal(_ result: MusicSearchResult) {
-        guard let track = result.playableTrack else { return }
-        let playable = externalLibrary?.tracks.compactMap(\.playableTrack) ?? []
+        guard let track = resolvedTrack(result) else { return }
+        let playable = mergedTracks
         playback.play(playable, startingAt: playable.firstIndex(of: track) ?? 0, context: .artist(destination.externalID ?? destination.name))
+    }
+
+    private var externalTracksWithoutLocalDuplicates: [MusicSearchResult] {
+        externalLibrary?.tracks.filter { result in localMatch(result) == nil } ?? []
+    }
+
+    private var externalReleasesWithoutLocalDuplicates: [MusicSearchResult] {
+        let localNames = Set(releases.map { $0.title.libraryNormalized })
+        return externalLibrary?.releases.filter { !localNames.contains($0.title.libraryNormalized) } ?? []
+    }
+
+    private var mergedTracks: [PlayableTrack] {
+        (artist?.tracks ?? []) + externalTracksWithoutLocalDuplicates.compactMap(resolvedTrack)
+    }
+
+    private func resolvedTrack(_ result: MusicSearchResult) -> PlayableTrack? { localMatch(result) ?? result.playableTrack }
+
+    private func localMatch(_ result: MusicSearchResult) -> PlayableTrack? {
+        localLibrary.tracks.first { local in
+            local.title.libraryNormalized == result.title.libraryNormalized
+                && local.artist.libraryNormalized == (result.artist ?? "").libraryNormalized
+                && (result.duration == 0 || abs(Double(local.durationSeconds) - result.duration) <= 3)
+        }
     }
 
     private func loadExternalLibrary() async {

@@ -44,12 +44,25 @@ export function registerSearchRoutes(
     }
   });
 
+  app.get("/external/releases/:provider/:externalId", async (request) => {
+    await principal(request);
+    const params = request.params as { provider: string; externalId: string };
+    if (params.provider !== "spotify" && params.provider !== "spotdl") throw new AuthError("provider_unavailable", 404, "spotdl.release_not_supported");
+    try { return await service.releaseLibrary(params.externalId); }
+    catch (error) {
+      if (error instanceof MusicProviderError) throw new AuthError(`provider_${error.kind}`, error.kind === "temporary" ? 503 : 404, error.message);
+      throw error;
+    }
+  });
+
   // Like catalog streaming, this route is intentionally usable by AVPlayer without
   // custom bearer headers. It only resolves an opaque public-provider identifier.
   app.get("/external/audio/:provider/:entityType/:externalId", async (request, reply) => {
     const params = request.params as { provider: string; entityType: "track" | "artist" | "release"; externalId: string };
+    const query = request.query as { expires?: string; signature?: string };
     try {
-      return reply.redirect(await service.resolveAudio(params.provider, params.entityType, params.externalId));
+      reply.header("Cache-Control", "no-store");
+      return reply.redirect(await service.resolveAudio(params.provider, params.entityType, params.externalId, query.expires, query.signature));
     } catch (error) {
       if (error instanceof MusicProviderError) {
         const status = error.kind === "authentication" ? 502 : error.kind === "rate_limit" ? 429

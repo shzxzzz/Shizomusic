@@ -11,6 +11,8 @@ import { PipedMusicSourceAdapter } from "./search/piped-adapter.js";
 import type { MusicSourceAdapter } from "./search/models.js";
 import { DatabaseAcquisitionStore } from "./acquisition/database-store.js";
 import { SpotDLArtistMetadataResolver } from "./search/spotdl-metadata.js";
+import { SpotDLStreamAdapter } from "./search/spotdl-stream-adapter.js";
+import { DatabaseExternalMetadataCache } from "./search/database-metadata-cache.js";
 
 const databaseURL = process.env.DATABASE_URL;
 if (!databaseURL) throw new Error("DATABASE_URL is required");
@@ -23,11 +25,13 @@ if (process.env.ENABLE_AUDIUS_SEARCH === "true") {
 const pipedInstances = (process.env.PIPED_INSTANCES ?? "https://api.piped.private.coffee,https://pipedapi.kavin.rocks,https://pipedapi.leptons.xyz")
   .split(",").map((value) => value.trim()).filter(Boolean);
 searchAdapters.push(new PipedMusicSourceAdapter(pipedInstances));
+searchAdapters.push(new SpotDLStreamAdapter());
 const app = buildApp({
   authStore: new DatabaseAuthStore(db),
   syncStore: new DatabaseSyncStore(db),
   catalogStore,
-  searchService: new MusicSearchService(searchAdapters, new DatabaseMusicSearchCache(db), new SpotDLArtistMetadataResolver()),
+  searchService: new MusicSearchService(searchAdapters, new DatabaseMusicSearchCache(db),
+    new SpotDLArtistMetadataResolver(undefined, new DatabaseExternalMetadataCache(db))),
   acquisitionStore: new DatabaseAcquisitionStore(db),
   readiness: async () => { await pool.query("select 1"); },
 });

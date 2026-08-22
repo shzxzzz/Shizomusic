@@ -7,6 +7,7 @@ enum MusicSourceCapability: String, Codable, Hashable, Sendable {
 
 enum ExternalEntityType: String, Codable, Hashable, Sendable { case track, artist, release }
 enum ExternalAcquisitionMethod: String, Codable, Hashable, Sendable { case direct, ytDlp = "yt_dlp", spotdl, unavailable }
+enum ExternalReleaseType: String, Codable, Hashable, Sendable { case album, single, compilation, unknown }
 
 struct ExternalEntityReference: Hashable, Sendable {
     let provider: String
@@ -35,6 +36,12 @@ struct MusicSearchResult: Identifiable, Hashable, Sendable {
     let streamURL: URL?
     let attribution: String
     let localTrack: PlayableTrack?
+    var releaseType: ExternalReleaseType? = nil
+    var releaseDate: String? = nil
+    var trackCount: Int? = nil
+    var discNumber: Int? = nil
+    var trackNumber: Int? = nil
+    var isExplicit: Bool = false
 
     var provider: String { metadataProvider }
     var album: String? { release }
@@ -73,6 +80,11 @@ struct MusicSourceBatch: Sendable {
 struct ExternalArtistLibrary: Sendable {
     let artist: MusicSearchResult
     let releases: [MusicSearchResult]
+    let tracks: [MusicSearchResult]
+}
+
+struct ExternalReleaseDetail: Sendable {
+    let release: MusicSearchResult
     let tracks: [MusicSearchResult]
 }
 

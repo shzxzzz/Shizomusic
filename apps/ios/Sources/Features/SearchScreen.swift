@@ -84,6 +84,7 @@ struct SearchScreen: View {
             }
             .navigationDestination(for: CollectionDetailDestination.self) { CollectionDetailScreen(destination: $0) }
             .navigationDestination(for: ArtistDetailDestination.self) { ArtistDetailScreen(destination: $0) }
+            .navigationDestination(for: ExternalReleaseDestination.self) { ExternalReleaseDetailScreen(destination: $0) }
             .toolbar(.hidden, for: .navigationBar)
         }
         .preferredColorScheme(.dark)

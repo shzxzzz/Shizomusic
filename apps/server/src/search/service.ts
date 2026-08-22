@@ -1,5 +1,6 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import type { ArtistMetadataResolver, MusicSearchCache, MusicSourceAdapter, MusicSourceFailure, NormalizedMusicResult } from "./models.js";
-import type { ExternalArtistLibrary } from "./spotdl-metadata.js";
+import type { ExternalArtistLibrary, ExternalReleaseDetail } from "./spotdl-metadata.js";
 import { MusicProviderError } from "./models.js";
 
 export interface MusicSearchResponse {
@@ -21,15 +22,14 @@ export class MusicSearchService {
   private readonly byID: Map<string, MusicSourceAdapter>;
 
   constructor(private readonly adapters: MusicSourceAdapter[], private readonly cache: MusicSearchCache,
-              private readonly artistMetadata?: ArtistMetadataResolver) {
+              private readonly artistMetadata?: ArtistMetadataResolver,
+              private readonly playbackSecret = process.env.AUTH_SECRET ?? "development-playback-secret") {
     this.byID = new Map(adapters.map((adapter) => [adapter.id, adapter]));
   }
 
   async artistLibrary(name: string): Promise<ExternalArtistLibrary> {
     if (!this.artistMetadata) throw new MusicProviderError("spotdl", "unavailable", "spotdl.not_configured");
-    // Resolve audio once for the whole artist page: catalog wins, then Piped.
-    // Temporary provider URLs remain behind resolverPath and are never persisted.
-    const audioAdapters = this.adapters.filter((adapter) => adapter.id === "catalog" || adapter.id === "piped");
+    const audioAdapters = this.adapters.filter((adapter) => adapter.id === "catalog");
     const [metadata, settled] = await Promise.all([
       this.artistMetadata.resolveArtist(name).then((value) => ({ value })).catch((error: unknown) => ({ error })),
       Promise.allSettled(audioAdapters.map((adapter) => adapter.search(name, 50))),
@@ -39,15 +39,29 @@ export class MusicSearchService {
     const catalogTracks = candidates.filter((value) => value.metadataSource.provider === "catalog" && artistMatches(value, name));
     if (!("value" in metadata) && !catalogTracks.length) throw metadata.error;
     const library = "value" in metadata ? metadata.value : catalogFallback(name, catalogTracks);
-    const tracks = library.tracks.map((track) => {
-      const match = candidates.find((candidate) => sameTrack(track, candidate, name));
-      return match ? { ...track, audioSource: match.audioSource } : track;
-    });
+    const catalog = this.byID.get("catalog");
+    const tracks = await Promise.all(library.tracks.map(async (track) => {
+      const exact = await catalog?.lookupExternal?.(track.metadataSource.reference);
+      const match = exact ?? candidates.find((candidate) => sameTrack(track, candidate, name));
+      return match ? { ...track, audioSource: match.audioSource } : this.withSpotDLStream(track);
+    }));
     const known = new Set(tracks.map(trackFingerprint));
     for (const candidate of candidates.filter((value) => value.metadataSource.provider === "catalog")) {
       if (!known.has(trackFingerprint(candidate))) tracks.push(candidate);
     }
     return { ...library, tracks };
+  }
+
+  async releaseLibrary(externalID: string): Promise<ExternalReleaseDetail> {
+    if (!this.artistMetadata) throw new MusicProviderError("spotdl", "unavailable", "spotdl.not_configured");
+    const detail = await this.artistMetadata.resolveRelease(externalID);
+    const catalog = this.byID.get("catalog");
+    const candidates = catalog ? (await catalog.search(detail.release.artist ?? detail.release.title, 50)).items : [];
+    return { ...detail, tracks: await Promise.all(detail.tracks.map(async (track) => {
+      const exact = await catalog?.lookupExternal?.(track.metadataSource.reference);
+      const match = exact ?? candidates.find((candidate) => sameTrack(track, candidate, detail.release.artist ?? ""));
+      return match ? { ...track, audioSource: match.audioSource } : this.withSpotDLStream(track);
+    })) };
   }
 
   async search(query: string, limit = 30, onlyProvider?: string): Promise<MusicSearchResponse> {
@@ -75,10 +89,31 @@ export class MusicSearchService {
     return { results, failures };
   }
 
-  async resolveAudio(provider: string, entityType: "track" | "artist" | "release", externalID: string): Promise<string> {
+  async resolveAudio(provider: string, entityType: "track" | "artist" | "release", externalID: string,
+                     expires?: string, signature?: string): Promise<string> {
+    if (provider === "spotdl" && !this.verifyToken(provider, entityType, externalID, expires, signature)) {
+      throw new MusicProviderError(provider, "authentication", "spotdl.invalid_playback_token");
+    }
     const adapter = this.byID.get(provider);
     if (!adapter?.capabilities.has("stream") || !adapter.resolveAudio) throw new MusicProviderError(provider, "unavailable", "stream_not_supported");
     return adapter.resolveAudio({ provider, entityType, externalID, canonicalURL: null });
+  }
+
+  private withSpotDLStream(track: NormalizedMusicResult): NormalizedMusicResult {
+    const reference = track.metadataSource.reference;
+    if (reference.provider !== "spotify" || reference.entityType !== "track") return track;
+    const expires = String(Math.floor(Date.now() / 1_000) + 6 * 60 * 60);
+    const signature = this.signToken("spotdl", "track", reference.externalID, expires);
+    return { ...track, audioSource: { provider: "spotdl", reference,
+      resolverPath: `/external/audio/spotdl/track/${encodeURIComponent(reference.externalID)}?expires=${expires}&signature=${signature}` } };
+  }
+  private signToken(provider: string, entityType: string, externalID: string, expires: string): string {
+    return createHmac("sha256", this.playbackSecret).update(`${provider}|${entityType}|${externalID}|${expires}`).digest("base64url");
+  }
+  private verifyToken(provider: string, entityType: string, externalID: string, expires?: string, signature?: string): boolean {
+    if (!expires || !signature || !/^\d+$/.test(expires) || Number(expires) < Math.floor(Date.now() / 1_000)) return false;
+    const expected = Buffer.from(this.signToken(provider, entityType, externalID, expires)); const actual = Buffer.from(signature);
+    return expected.length === actual.length && timingSafeEqual(expected, actual);
   }
 }
 

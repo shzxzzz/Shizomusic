@@ -134,6 +134,12 @@ struct APIMusicSearchItem: Codable, Sendable {
     let audioSource: AudioSource?
     let acquisition: Acquisition
     let attribution: String
+    let releaseType: String?
+    let releaseDate: String?
+    let trackCount: Int?
+    let discNumber: Int?
+    let trackNumber: Int?
+    let explicit: Bool?
 }
 
 struct APIMusicSourceFailure: Codable, Sendable {
@@ -151,6 +157,11 @@ struct APIMusicSearchResponse: Codable, Sendable {
 struct APIExternalArtistLibrary: Codable, Sendable {
     let artist: APIMusicSearchItem
     let releases: [APIMusicSearchItem]
+    let tracks: [APIMusicSearchItem]
+}
+
+struct APIExternalReleaseDetail: Codable, Sendable {
+    let release: APIMusicSearchItem
     let tracks: [APIMusicSearchItem]
 }
 
@@ -261,6 +272,12 @@ struct GeneratedAPIClient: Sendable {
         request.httpMethod = "GET"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         return try await perform(request)
+    }
+
+    func externalRelease(provider: String, externalID: String, accessToken: String) async throws -> APIExternalReleaseDetail {
+        let safeProvider = provider.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? provider
+        let safeID = externalID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? externalID
+        return try await get(path: "external/releases/\(safeProvider)/\(safeID)", accessToken: accessToken)
     }
 
     func createAcquisition(result: MusicSearchResult, accessToken: String) async throws -> APIAcquisitionJob {
